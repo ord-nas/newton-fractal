@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+    <head>
+	<script>
+	 var cycling = false;
+	 var events = [];
+
+	 function compute_fps() {
+	     var now = Date.now();
+	     while (events.length > 0 && events[0] < now - 1000) {
+		 events.shift();
+	     }
+	     events.push(now);
+	     document.getElementById("fps").innerHTML = "FPS: " + events.length;
+	 }
+	 
+	 function toggle_cycle() {
+	     cycling = !cycling;
+	     console.log(cycling);
+	     if (cycling) next_image();
+	 }
+
+	 function next_image() {
+	     const image = document.getElementById("image");
+	     fetch("dynamic_image")
+		 .then((response) => response.blob())
+		 .then((blob) => {
+		     const objectURL = URL.createObjectURL(blob);
+		     var old_url = image.src;
+		     image.src = objectURL;
+		     URL.revokeObjectURL(old_url);
+		     compute_fps();
+		     if (cycling) {
+			 window.requestAnimationFrame(next_image);
+		     }
+		 });
+	 }
+	 
+	 function main() {
+	     const cycle = document.getElementById("cycle");
+	     cycle.addEventListener("click", toggle_cycle);
+	     const next = document.getElementById("next");
+	     next.addEventListener("click", next_image);
+	 }
+	 
+	 addEventListener("load", (event) => {main();});
+	</script>
+    </head>
+    <body>
+	<p>Hello World! This is the index page. And now it has more text.</p>
+	<p><button id="next">Load Next Image</button></p>
+	<p><button id="cycle">Start/Stop Image Cycling</button></p>
+	<img id="image" src="static/hourglass.png"/>
+	<p id="fps">FPS: ???</p>
+    </body>
+</html>
