@@ -1,0 +1,74 @@
+# Shared Directory
+	
+This directory is shared between the virtual machine and with Windows host.
+* On Ubuntu: ~/Documents/Newton Fractal/
+  * Emacs rsyncs this directory to /mnt/hgfs/Newton Fractal/, which is the real shared directory location.
+* On Windows: C:\Users\young\Documents\Newton Fractal
+
+Note, for some reason, on boot sometimes the shared directory doesn't appear in Ubuntu.
+To fix, toggle shared directory off and on again (seriously).
+* Player > Manage > Virtual Machine Settings... > Options > Shared Folders > Disabled
+* Player > Manage > Virtual Machine Settings... > Options > Shared Folders > Always enabled
+
+# Javascript Prototype
+
+js_prototype directory contains an initial client-side-only prototype.
+
+To use, just point your browser at js_prototype/fractal.html
+
+This just displays a single static fractal. It takes a long time (~20 seconds) to generate the fractal.
+
+This is likely too slow to be useful.
+
+# Crow
+
+The crow directory contains what is hopefully the actual project architecture.
+
+We will use a C++ backend (using the Crow webserver library, https://crowcpp.org/) and have that talk to a javascript frontend.
+
+## Setup
+
+Install crow. Download the latest .deb file from the release section of Crow's website.
+
+At the time of starting this project, that was crow-v1.0+5.deb (included in this repository).
+
+Open in file explorer and click to install in Ubuntu Software Center.
+
+Then also install some dependencies.
+* Asio: sudo apt install libasio-dev
+* Boost: sudo apt-get install libboost-all-dev
+
+## Compile
+
+Compile with make, using the dummest makefile ever.
+
+$ make
+
+## Run
+
+Run two different ways:
+
+1. Run inside of the Ubuntu VM.
+
+Run:
+
+$ ./fractal_server
+
+Then access http://<vm_ip_address>:18080/ on the host machine.
+(see ~/Documents/Canvas/web_server_info.txt for instructions on getting the IP address, section 1B)
+
+2. Run in bash on Windows.
+
+Make sure the shared directory is working and the sync is up to date.
+
+Start bash on windows.
+
+Navigate to the Shared Directory (Windows directories are mounted in):
+
+$ cd /mnt/c/Users/young/Documents/Newton\ Fractal/crow
+
+Run:
+
+$ ./fractal_server
+
+Then access http://localhost:18080
