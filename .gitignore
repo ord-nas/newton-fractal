@@ -1,2 +1,5 @@
 # Emacs temporary files
 *~
+
+# Crow binary
+crow/fractal_server
