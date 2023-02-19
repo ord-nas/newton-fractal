@@ -40,7 +40,7 @@ Then also install some dependencies.
 
 ## Compile
 
-Compile with make, using the dummest makefile ever.
+Compile with make, using the dumbest makefile ever.
 
 $ make
 
@@ -63,7 +63,7 @@ Make sure the shared directory is working and the sync is up to date.
 
 Start bash on windows.
 
-Navigate to the Shared Directory (Windows directories are mounted in):
+Navigate to the Shared Directory (Windows directories are mounted):
 
 $ cd /mnt/c/Users/young/Documents/Newton\ Fractal/crow
 
