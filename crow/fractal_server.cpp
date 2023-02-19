@@ -24,30 +24,22 @@ std::string DrawToPng(const FractalParams& params) {
   png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>>
     image(params.width, params.height);
 
-  const Complex origin(0.0, 0.0);
-  const double r_rng = 5.0;
-  const double i_rng = r_rng / params.width * params.height;
-  const double r_min = origin.r - r_rng / 2;
-  const double r_max = origin.r + r_rng / 2;
-  const double i_min = origin.i - i_rng / 2;
-  const double i_max = origin.i + i_rng / 2;
-
   std::random_device rd;
   std::mt19937 twister(rd());
   std::uniform_real_distribution<> dist(-1.0, 1.0);
-  const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(dist(twister), dist(twister)),
-						   Complex(dist(twister), dist(twister)),
-						   Complex(dist(twister), dist(twister))});
-  // const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(1.0, 0.0),
-  // 						   Complex(-0.5, 0.86602540378),
-  // 						   Complex(-0.5, -0.86602540378)});
+  // const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(dist(twister), dist(twister)),
+  // 						   Complex(dist(twister), dist(twister)),
+  // 						   Complex(dist(twister), dist(twister))});
+  const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(1.0, 0.0),
+						   Complex(-0.5, 0.86602540378),
+						   Complex(-0.5, -0.86602540378)});
   std::cout << "Drawing: " << p << std::endl;
 
-  const double i_delta = (i_max - i_min) / params.height;
-  const double r_delta = (r_max - r_min) / params.width;
-  double i = i_min;
-  for (size_t y = 0; y < params.height; ++y) {
-    double r = r_min;
+  const double i_delta = (params.i_max - params.i_min) / params.height;
+  const double r_delta = (params.r_max - params.r_min) / params.width;
+  double i = params.i_min;
+  for (int y = params.height - 1; y >= 0; --y) {
+    double r = params.r_min;
     for (size_t x = 0; x < params.width; ++x) {
       const Complex result = Newton(p, Complex(r, i), 100);
       const size_t zero_index = ClosestZero(result, p.zeros);

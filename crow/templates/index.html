@@ -1,9 +1,192 @@
 <!DOCTYPE html>
 <html>
     <head>
+	<style type="text/css">
+	 #viewport {
+	     display: grid;
+	     grid-template: 1fr / 1fr;
+	     place-items: start;
+	 }
+	 #viewport > * {
+	     grid-column: 1 / 1;
+	     grid-row: 1 / 1;
+	 }
+	</style>
 	<script>
 	 var cycling = false;
 	 var events = [];
+
+	 function shallow_equal(a, b) {
+	     if (a === null && b === null) {
+		 return true;
+	     }
+
+	     if (a === null || b === null) {
+		 return false;
+	     }
+
+	     if (Object.keys(a).length !== Object.keys(b).length) {
+		 return false;
+	     }
+
+	     for (let key of Object.keys(a)) {
+		 if (a[key] !== b[key]) {
+		     return false;
+		 }
+	     }
+	     return true;
+	 }
+
+	 class FractalRequester {
+	     constructor(image, width, height) {
+		 this.image = image;
+		 this.current_params = {
+		     width: width,
+		     height: height,
+		 };
+		 this.last_request_params = {};
+		 this.pending_request = null;
+	     }
+
+	     viewport_move(viewport) {
+		 this.current_params.i_min = viewport.i_min;
+		 this.current_params.i_max = viewport.i_max;
+		 this.current_params.r_min = viewport.r_min;
+		 this.current_params.r_max = viewport.r_max;
+		 this.maybe_request();
+	     }
+
+	     to_url_params() {
+		 return new URLSearchParams(this.current_params);
+	     }
+
+	     maybe_request() {
+		 // If we have a pending request, nothing to do.
+		 if (this.pending_request !== null) {
+		     return;
+		 }
+
+		 // If the params are the same as our preview request, nothing to do.
+		 if (shallow_equal(this.last_request_params, this.current_params)) {
+		     return;
+		 }
+
+		 // Schedule a new request!
+		 Object.assign(this.last_request_params, this.current_params);
+		 console.log("Requesting", this.current_params);
+		 this.pending_request = fetch("fractal", {
+		     method: 'POST',
+		     headers: {
+			 'Content-Type': 'application/x-www-form-urlencoded'
+		     },
+		     body: this.to_url_params(),
+		 })
+		     .then((response) => response.blob())
+		     .then((blob) => {
+			 const objectURL = URL.createObjectURL(blob);
+			 var old_url = this.image.src;
+			 this.image.src = objectURL;
+			 URL.revokeObjectURL(old_url);
+			 this.pending_request = null;
+			 this.maybe_request();
+			 compute_fps();
+		     });
+	     }
+
+	 }
+
+	 // Origin for both coordinate systems is top left.
+	 // Pixel coordinates are in the normal pixel sense, positive in the right and down directions.
+	 // Complex coordinates are in the normal math sense, positive in the right and *up* directions.
+	 class ViewportTracker {
+	     constructor(canvas) {
+		 this.canvas = canvas;
+		 this.origin_i = 2.5 / canvas.width * canvas.height;
+		 this.origin_r = -2.5;
+		 this.range_r = 5.0;
+		 // Last position of the mouse on this element, in pixels.
+		 // Only set when we're in a mouse drag event.
+		 this.last_pixels = null;
+
+		 // Attach canvas event listeners.
+		 canvas.addEventListener("mousedown", (event) => this.mousedown(event));
+		 canvas.addEventListener("mouseup", (event) => this.mouseup(event));
+		 canvas.addEventListener("mousemove", (event) => this.mousemove(event));
+		 canvas.addEventListener("wheel", (event) => this.wheel(event));
+
+		 // Callbacks when the viewport moves.
+		 this.callbacks = [];
+	     }
+
+	     get_pixels(event) {
+		 var rect = this.canvas.getBoundingClientRect();
+		 return {
+		     x: event.clientX - rect.left,
+		     y: event.clientY - rect.top,
+		 };
+	     }
+
+	     get_complex(event) {
+		 var pixels = this.get_pixels(event);
+		 return {
+		     r: this.origin_r + (pixels.x / this.canvas.width * this.range_r),
+		     i: this.origin_i - (pixels.y / this.canvas.width * this.range_r),
+		 };
+	     }
+
+	     get_viewport() {
+		 return {
+		     i_min: this.origin_i - this.range_r / this.canvas.width * this.canvas.height,
+		     i_max: this.origin_i,
+		     r_min: this.origin_r,
+		     r_max: this.origin_r + this.range_r,
+		 };
+	     }
+
+	     run_callbacks() {
+		 var viewport = this.get_viewport();
+		 for (var callback of this.callbacks) {
+		     callback(viewport);
+		 }
+	     }
+
+	     mousedown(event) {
+		 this.last_pixels = this.get_pixels(event);
+	     }
+
+	     mouseup(event) {
+		 this.last_pixels = null;
+	     }
+
+	     mousemove(event) {
+		 if (this.last_pixels === null) return;
+		 var current_pixels = this.get_pixels(event);
+		 this.origin_r -= (current_pixels.x - this.last_pixels.x) / this.canvas.width * this.range_r;
+		 this.origin_i += (current_pixels.y - this.last_pixels.y) / this.canvas.width * this.range_r;
+		 this.last_pixels = current_pixels;
+		 this.run_callbacks();
+	     }
+
+	     wheel(event) {
+		 var scale_per_pixel = 0.003;
+		 var scale_amount = Math.pow(1 + scale_per_pixel, event.deltaY);
+		 var pixels = this.get_pixels(event);
+		 var complex = this.get_complex(event);
+
+		 // Adjust the new range based on the scale.
+		 this.range_r *= scale_amount;
+
+		 // Figure out how to adjust the origin so that the same point stays under the mouse.
+		 this.origin_r = complex.r - pixels.x / this.canvas.width * this.range_r;
+		 this.origin_i = complex.i + pixels.y / this.canvas.width * this.range_r;
+
+		 this.run_callbacks();
+	     }
+
+	     add_callback(callback) {
+		 this.callbacks.push(callback);
+	     }
+	 }
 
 	 function compute_fps() {
 	     var now = Date.now();
@@ -20,50 +203,26 @@
 	     if (cycling) next_image();
 	 }
 
-	 function next_image() {
-	     const image = document.getElementById("image");
-	     fetch("fractal", {
-		 method: 'POST',
-		 headers: {
-		     'Content-Type': 'application/x-www-form-urlencoded'
-		 },
-		 body: new URLSearchParams({
-		     'i_min': -2.5,
-		     'i_max': 2.5,
-		     'r_min': -2.5,
-		     'r_max': 2.5,
-		     'width': 1280,
-		     'height': 720,
-		 })
-	     })
-		 .then((response) => response.blob())
-		 .then((blob) => {
-		     const objectURL = URL.createObjectURL(blob);
-		     var old_url = image.src;
-		     image.src = objectURL;
-		     URL.revokeObjectURL(old_url);
-		     compute_fps();
-		     if (cycling) {
-			 window.requestAnimationFrame(next_image);
-		     }
-		 });
-	 }
-
 	 function main() {
-	     const cycle = document.getElementById("cycle");
-	     cycle.addEventListener("click", toggle_cycle);
-	     const next = document.getElementById("next");
-	     next.addEventListener("click", next_image);
+	     const overlay = document.getElementById("overlay");
+	     const image = document.getElementById("fractal");
+	     const requester = new FractalRequester(image, overlay.width, overlay.height);
+	     const tracker = new ViewportTracker(overlay);
+	     tracker.add_callback((viewport) => requester.viewport_move(viewport));
+
+	     // Force an initial request.
+	     tracker.run_callbacks();
 	 }
 
 	 addEventListener("load", (event) => {main();});
 	</script>
     </head>
     <body>
-	<img id="image" src="static/hourglass.png"/>
+	<div id="viewport">
+	    <canvas id="overlay" width="1280px" height="720px" style="z-index:2"></canvas>
+	    <img id="fractal" src="static/hourglass.png" style="z-index:1"/>
+	</div>
 	<p>Hello World! This is the index page. And now it has more text.</p>
-	<p><button id="next">Load Next Image</button></p>
-	<p><button id="cycle">Start/Stop Image Cycling</button></p>
 	<p id="fps">FPS: ???</p>
     </body>
 </html>
