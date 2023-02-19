@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <random>
 
 #include <png++/png.hpp>
 #include <crow.h>
@@ -25,9 +26,15 @@ std::string DrawToPng(int width, int height) {
   const double i_min = origin.i - i_rng / 2;
   const double i_max = origin.i + i_rng / 2;
 
-  const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(1.0, 0.0),
-						   Complex(-0.5, 0.86602540378),
-						   Complex(-0.5, -0.86602540378)});
+  std::random_device rd;
+  std::mt19937 twister(rd());
+  std::uniform_real_distribution<> dist(-1.0, 1.0);
+  const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(dist(twister), dist(twister)),
+						   Complex(dist(twister), dist(twister)),
+						   Complex(dist(twister), dist(twister))});
+  // const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(1.0, 0.0),
+  // 						   Complex(-0.5, 0.86602540378),
+  // 						   Complex(-0.5, -0.86602540378)});
   std::cout << "Drawing: " << p << std::endl;
 
   const double i_delta = (i_max - i_min) / height;
@@ -95,14 +102,15 @@ int main() {
 
   //define dynamic image endpoint
   CROW_ROUTE(app, "/dynamic_image")([&](){
-    i++;
-    i = i % (images.size() + 1);
-    if (i >= images.size()) {
-      // The real deal!
-      return crow::response("png", DrawToPng(1280, 720));
-    } else {
-      return crow::response("png", images[i]);
-    }
+    return crow::response("png", DrawToPng(1280, 720));
+    // i++;
+    // i = i % (images.size() + 1);
+    // if (i >= images.size()) {
+    //   // The real deal!
+    //   return crow::response("png", DrawToPng(1280, 720));
+    // } else {
+    //   return crow::response("png", images[i]);
+    // }
   });
 
   //set the port, set the app to run on multiple threads, and run the app
