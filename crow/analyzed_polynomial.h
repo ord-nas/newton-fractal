@@ -5,6 +5,7 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <limits>
 
 #include "complex.h"
 #include "polynomial.h"
@@ -17,12 +18,24 @@ Polynomial Differentiate(const Polynomial& p) {
   return Polynomial(result);
 }
 
+double ConservativeConvergenceRadius(const std::vector<Complex>& zeros) {
+  double min_distance = std::numeric_limits<double>::infinity();
+  for (size_t i = 0; i < zeros.size(); i++) {
+    for (size_t j = i + 1; j < zeros.size(); j++) {
+      min_distance = std::min(min_distance, (zeros[i] - zeros[j]).magnitude());
+    }
+  }
+  return min_distance / 20.0;
+}
+
 class AnalyzedPolynomial {
  public:
   AnalyzedPolynomial(const std::vector<Complex>& zeros)
     : zeros(zeros),
       polynomial(Polynomial::FromZeros(zeros)),
-      derivative(Differentiate(polynomial)) {
+      derivative(Differentiate(polynomial)),
+      convergence_radius(ConservativeConvergenceRadius(zeros)),
+      sqr_convergence_radius(convergence_radius * convergence_radius) {
     assert(!zeros.empty());
   }
 
@@ -33,6 +46,15 @@ class AnalyzedPolynomial {
       result += (z - zeros[i]);
     }
     return result;
+  }
+
+  bool ConvergedToZero(const Complex& z) const {
+    for (const Complex& zero : zeros) {
+      if (std::abs(z.r - zero.r) > convergence_radius) continue;
+      if (std::abs(z.i - zero.i) > convergence_radius) continue;
+      if ((z - zero).sqr_magnitude() <= sqr_convergence_radius) return true;
+    }
+    return false;
   }
 
   std::string ToString() const {
@@ -60,10 +82,13 @@ class AnalyzedPolynomial {
   std::vector<Complex> zeros;
   Polynomial polynomial;
   Polynomial derivative;
+  double convergence_radius;
+  double sqr_convergence_radius;
 };
 
 Complex Newton(const AnalyzedPolynomial& p, Complex guess, size_t iterations) {
   for (size_t i = 0; i < iterations; ++i) {
+    if (p.ConvergedToZero(guess)) break;
     guess -= p.polynomial(guess) / p.derivative(guess);
   }
   return guess;

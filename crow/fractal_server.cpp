@@ -30,10 +30,12 @@ std::string DrawToPng(int width, int height) {
 						   Complex(-0.5, -0.86602540378)});
   std::cout << "Drawing: " << p << std::endl;
 
-  for (size_t y = 0; y < height; y++) {
-    const double i = 1.0 * y / height * (i_max - i_min) + i_min;
+  const double i_delta = (i_max - i_min) / height;
+  const double r_delta = (r_max - r_min) / width;
+  double i = i_min;
+  for (size_t y = 0; y < height; ++y) {
+    double r = r_min;
     for (size_t x = 0; x < width; ++x) {
-      const double r = 1.0 * x / width * (r_max - r_min) + r_min;
       const Complex result = Newton(p, Complex(r, i), 100);
       const size_t zero_index = ClosestZero(result, p.zeros);
       if (zero_index == 0) {
@@ -43,7 +45,9 @@ std::string DrawToPng(int width, int height) {
       } else if (zero_index == 2) {
 	image[y][x] = png::rgb_pixel(0, 0, 255);
       }
+      r += r_delta;
     }
+    i += i_delta;
   }
 
   std::ostringstream png_sstrm;

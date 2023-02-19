@@ -4,6 +4,7 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <math.h>
 
 class Complex;
 Complex operator*(const Complex& a, const Complex& b);
@@ -16,6 +17,10 @@ class Complex {
 
   double sqr_magnitude() const {
     return r * r + i * i;
+  }
+
+  double magnitude() const {
+    return sqrt(sqr_magnitude());
   }
 
   std::string ToString() const {
