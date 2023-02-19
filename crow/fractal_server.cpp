@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <random>
+#include <optional>
 
 #include <png++/png.hpp>
 #include <crow.h>
@@ -14,13 +15,102 @@
 
 int i = 0;
 
-std::string DrawToPng(int width, int height) {
+bool ParsePositiveInt(const crow::query_string& url_params,
+		      const std::string& key,
+		      int* output) {
+  const char* value = url_params.get(key);
+  if (value == nullptr) {
+    return false;
+  }
+  std::string value_str(value);
+
+  int num = 0;
+  size_t chars_processed = 0;
+  try {
+    num = std::stoi(value_str, &chars_processed);
+  } catch (std::invalid_argument const& ex) {
+    return false;
+  } catch(std::out_of_range const& ex) {
+    return false;
+  }
+
+  if (chars_processed != value_str.size()) {
+    return false;
+  }
+
+  if (num <= 0) {
+    return false;
+  }
+
+  *output = num;
+  return true;
+}
+
+bool ParseFiniteDouble(const crow::query_string& url_params,
+		       const std::string& key,
+		       double* output) {
+  const char* value = url_params.get(key);
+  if (value == nullptr) {
+    return false;
+  }
+  std::string value_str(value);
+
+  double num = 0;
+  size_t chars_processed = 0;
+  try {
+    num = std::stod(value_str, &chars_processed);
+  } catch (std::invalid_argument const& ex) {
+    return false;
+  } catch(std::out_of_range const& ex) {
+    return false;
+  }
+
+  if (chars_processed != value_str.size()) {
+    return false;
+  }
+
+  if (!std::isfinite(num)) {
+    return false;
+  }
+
+  *output = num;
+  return true;
+}
+
+struct FractalParams {
+  static std::optional<FractalParams> Parse(const crow::query_string& url_params) {
+    FractalParams fractal_params;
+    if (ParseFiniteDouble(url_params, "i_min", &fractal_params.i_min) &&
+	ParseFiniteDouble(url_params, "i_max", &fractal_params.i_max) &&
+	ParseFiniteDouble(url_params, "r_min", &fractal_params.r_min) &&
+	ParseFiniteDouble(url_params, "r_max", &fractal_params.r_max) &&
+	ParsePositiveInt(url_params, "width", &fractal_params.width) &&
+	ParsePositiveInt(url_params, "height", &fractal_params.height)) {
+      return fractal_params;
+    }
+    return std::nullopt;
+  }
+
+  double i_min;
+  double i_max;
+  double r_min;
+  double r_max;
+  int width;
+  int height;
+};
+
+crow::query_string GetBodyParams(const crow::request& req) {
+  std::string fake_url = "?" + req.body;
+  return crow::query_string(fake_url);
+}
+
+std::string DrawToPng(const FractalParams& params) {
   png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>>
-    image(width, height);
+    image(params.width, params.height);
 
   const Complex origin(0.0, 0.0);
   const double r_rng = 5.0;
-  const double i_rng = r_rng / width * height;
+  const double i_rng = r_rng / params.width * params.height;
   const double r_min = origin.r - r_rng / 2;
   const double r_max = origin.r + r_rng / 2;
   const double i_min = origin.i - i_rng / 2;
@@ -37,12 +127,12 @@ std::string DrawToPng(int width, int height) {
   // 						   Complex(-0.5, -0.86602540378)});
   std::cout << "Drawing: " << p << std::endl;
 
-  const double i_delta = (i_max - i_min) / height;
-  const double r_delta = (r_max - r_min) / width;
+  const double i_delta = (i_max - i_min) / params.height;
+  const double r_delta = (r_max - r_min) / params.width;
   double i = i_min;
-  for (size_t y = 0; y < height; ++y) {
+  for (size_t y = 0; y < params.height; ++y) {
     double r = r_min;
-    for (size_t x = 0; x < width; ++x) {
+    for (size_t x = 0; x < params.width; ++x) {
       const Complex result = Newton(p, Complex(r, i), 100);
       const size_t zero_index = ClosestZero(result, p.zeros);
       if (zero_index == 0) {
@@ -101,17 +191,29 @@ int main() {
   });
 
   //define dynamic image endpoint
-  CROW_ROUTE(app, "/dynamic_image")([&](){
-    return crow::response("png", DrawToPng(1280, 720));
-    // i++;
-    // i = i % (images.size() + 1);
-    // if (i >= images.size()) {
-    //   // The real deal!
-    //   return crow::response("png", DrawToPng(1280, 720));
-    // } else {
-    //   return crow::response("png", images[i]);
-    // }
-  });
+  CROW_ROUTE(app, "/dynamic_image").methods(crow::HTTPMethod::POST)
+    ([&](const crow::request& req){
+      std::cout << "Got the following params in request:" << std::endl;
+      const auto& params = GetBodyParams(req);
+      for (const std::string& key : params.keys()) {
+	std::cout << "  " << key << " => " << std::string(params.get(key)) << std::endl;
+      }
+      std::optional<FractalParams> fractal_params = FractalParams::Parse(params);
+      if (!fractal_params.has_value()) {
+	std::cout << "Malformed params :(" << std::endl;
+	return crow::response(400);
+      } else {
+	return crow::response("png", DrawToPng(*fractal_params));
+      }
+      // i++;
+      // i = i % (images.size() + 1);
+      // if (i >= images.size()) {
+      //   // The real deal!
+      //   return crow::response("png", DrawToPng(1280, 720));
+      // } else {
+      //   return crow::response("png", images[i]);
+      // }
+    });
 
   //set the port, set the app to run on multiple threads, and run the app
   app.port(18080).multithreaded().run();

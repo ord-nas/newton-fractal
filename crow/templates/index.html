@@ -13,7 +13,7 @@
 	     events.push(now);
 	     document.getElementById("fps").innerHTML = "FPS: " + events.length;
 	 }
-	 
+
 	 function toggle_cycle() {
 	     cycling = !cycling;
 	     console.log(cycling);
@@ -22,7 +22,20 @@
 
 	 function next_image() {
 	     const image = document.getElementById("image");
-	     fetch("dynamic_image")
+	     fetch("dynamic_image", {
+		 method: 'POST',
+		 headers: {
+		     'Content-Type': 'application/x-www-form-urlencoded'
+		 },
+		 body: new URLSearchParams({
+		     'i_min': -2.5,
+		     'i_max': 2.5,
+		     'r_min': -2.5,
+		     'r_max': 2.5,
+		     'width': 1280,
+		     'height': 720,
+		 })
+	     })
 		 .then((response) => response.blob())
 		 .then((blob) => {
 		     const objectURL = URL.createObjectURL(blob);
@@ -35,14 +48,14 @@
 		     }
 		 });
 	 }
-	 
+
 	 function main() {
 	     const cycle = document.getElementById("cycle");
 	     cycle.addEventListener("click", toggle_cycle);
 	     const next = document.getElementById("next");
 	     next.addEventListener("click", next_image);
 	 }
-	 
+
 	 addEventListener("load", (event) => {main();});
 	</script>
     </head>
