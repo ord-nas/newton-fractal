@@ -4,7 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "crow.h"
+#include <png++/png.hpp>
+#include <crow.h>
 
 int i = 0;
 
@@ -19,7 +20,18 @@ int main()
     sstrm << fin.rdbuf();
     images.push_back(sstrm.str());
   }
-  
+
+  // Dynamically generate an in-memory PNG.
+  png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>> image(1280, 720);
+  for (png::uint_32 y = 0; y < image.get_height(); ++y) {
+    for (png::uint_32 x = 0; x < image.get_width(); ++x) {
+      image[y][x] = png::rgb_pixel(x, y, x + y);
+    }
+  }
+  std::ostringstream png_sstrm;
+  image.write_stream(png_sstrm);
+  images.push_back(png_sstrm.str());
+
   crow::SimpleApp app; //define your crow application
 
   //define your endpoint at the root directory
@@ -32,7 +44,7 @@ int main()
   //define dynamic image endpoint
   CROW_ROUTE(app, "/dynamic_image")([&](){
     i++;
-    i = i % 5;
+    i = i % images.size();
     return crow::response("png", images[i]);
   });
 

@@ -37,6 +37,7 @@ Open in file explorer and click to install in Ubuntu Software Center.
 Then also install some dependencies.
 * Asio: sudo apt install libasio-dev
 * Boost: sudo apt-get install libboost-all-dev
+* PNG++: sudo apt-get install libpng++-dev
 
 ## Compile
 
