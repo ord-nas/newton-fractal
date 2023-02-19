@@ -12,8 +12,7 @@
 #include "complex.h"
 #include "polynomial.h"
 #include "analyzed_polynomial.h"
-
-int i = 0;
+#include "development_utils.h"
 
 bool ParsePositiveInt(const crow::query_string& url_params,
 		      const std::string& key,
@@ -153,45 +152,15 @@ std::string DrawToPng(const FractalParams& params) {
 }
 
 int main() {
-  std::vector<std::string> images;
-  for (int img = 0; img < 5; img++) {
-    const char c = 'a' + img;
-    const std::string filename = "images/" + std::string(1, c) + "_small.png";
-    std::ifstream fin(filename,  std::ios::binary);
-    std::ostringstream sstrm;
-    sstrm << fin.rdbuf();
-    images.push_back(sstrm.str());
-  }
-
-  // Dynamically generate an in-memory PNG.
-  png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>> image(1280, 720);
-  for (png::uint_32 y = 0; y < image.get_height(); ++y) {
-    for (png::uint_32 x = 0; x < image.get_width(); ++x) {
-      image[y][x] = png::rgb_pixel(x, y, x + y);
-    }
-  }
-  std::ostringstream png_sstrm;
-  image.write_stream(png_sstrm);
-  images.push_back(png_sstrm.str());
-
-  Polynomial p1({Complex(1, 0), Complex(-2, 0)});
-  Polynomial p2({Complex(5, 0), Complex(3, 0)});
-  std::cout << p1 << " * " << p2 << " = " << (p1 * p2) << std::endl;
-
-  AnalyzedPolynomial ap({Complex(1, 2), Complex(3, 4), Complex(5, 6)});
-  std::cout << ap << std::endl;
-
   crow::SimpleApp app; //define your crow application
 
-  //define your endpoint at the root directory
+  // Main page.
   CROW_ROUTE(app, "/")([](){
-    std::cout << "Main page okay!";
-    auto page = crow::mustache::load_text("index.html");
-    return page;
+    return crow::mustache::load_text("index.html");
   });
 
-  //define dynamic image endpoint
-  CROW_ROUTE(app, "/dynamic_image").methods(crow::HTTPMethod::POST)
+  // Fractal image for main page.
+  CROW_ROUTE(app, "/fractal").methods(crow::HTTPMethod::POST)
     ([&](const crow::request& req){
       std::cout << "Got the following params in request:" << std::endl;
       const auto& params = GetBodyParams(req);
@@ -205,15 +174,29 @@ int main() {
       } else {
 	return crow::response("png", DrawToPng(*fractal_params));
       }
-      // i++;
-      // i = i % (images.size() + 1);
-      // if (i >= images.size()) {
-      //   // The real deal!
-      //   return crow::response("png", DrawToPng(1280, 720));
-      // } else {
-      //   return crow::response("png", images[i]);
-      // }
     });
+
+  // Test page - image cycler.
+  CROW_ROUTE(app, "/image_cycler.html")([](){
+    return crow::mustache::load_text("image_cycler.html");
+  });
+
+  // Actual image cycler endpoint.
+  ImageCycler cycler;
+  CROW_ROUTE(app, "/cyclic_image").methods(crow::HTTPMethod::POST)
+    ([&](){
+    return crow::response("png", cycler.Get());
+  });
+
+  // Test page - dynamic image generation.
+  CROW_ROUTE(app, "/dynamic_image.html")([](){
+    return crow::mustache::load_text("dynamic_image.html");
+  });
+
+  // Actual dynamic image endpoint.
+  CROW_ROUTE(app, "/sample_dynamic_image.png")([](){
+    return crow::response("png", GenerateSamplePng());
+  });
 
   //set the port, set the app to run on multiple threads, and run the app
   app.port(18080).multithreaded().run();

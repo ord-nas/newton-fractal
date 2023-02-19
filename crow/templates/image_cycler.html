@@ -22,20 +22,7 @@
 
 	 function next_image() {
 	     const image = document.getElementById("image");
-	     fetch("fractal", {
-		 method: 'POST',
-		 headers: {
-		     'Content-Type': 'application/x-www-form-urlencoded'
-		 },
-		 body: new URLSearchParams({
-		     'i_min': -2.5,
-		     'i_max': 2.5,
-		     'r_min': -2.5,
-		     'r_max': 2.5,
-		     'width': 1280,
-		     'height': 720,
-		 })
-	     })
+	     fetch("cyclic_image", {method: 'POST'})
 		 .then((response) => response.blob())
 		 .then((blob) => {
 		     const objectURL = URL.createObjectURL(blob);
@@ -60,10 +47,10 @@
 	</script>
     </head>
     <body>
-	<img id="image" src="static/hourglass.png"/>
-	<p>Hello World! This is the index page. And now it has more text.</p>
+	<p>Hello World! This is an image cycler page. It's for FPS testing purposes.</p>
 	<p><button id="next">Load Next Image</button></p>
 	<p><button id="cycle">Start/Stop Image Cycling</button></p>
 	<p id="fps">FPS: ???</p>
+	<img id="image" src="static/hourglass.png"/>
     </body>
 </html>
