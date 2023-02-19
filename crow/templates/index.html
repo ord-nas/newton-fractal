@@ -37,15 +37,42 @@
 	     return true;
 	 }
 
+	 function random_zero() {
+	     return {
+		 r: Math.random() * 2.0 - 1,
+		 i: Math.random() * 2.0 - 1,
+		 red: Math.floor(Math.random() * 255),
+		 green: Math.floor(Math.random() * 255),
+		 blue: Math.floor(Math.random() * 255),
+	     };
+	 }
+
+	 function random_color() {
+	     return {
+		 red: Math.floor(Math.random() * 255),
+		 green: Math.floor(Math.random() * 255),
+		 blue: Math.floor(Math.random() * 255),
+	     };
+	 }
+
 	 class FractalRequester {
-	     constructor(image, width, height) {
+	     constructor(image, width, height, zeros) {
 		 this.image = image;
 		 this.current_params = {
 		     width: width,
 		     height: height,
 		 };
+		 this.set_zeros(zeros);
 		 this.last_request_params = {};
 		 this.pending_request = null;
+	     }
+
+	     set_zeros(zeros) {
+		 this.current_params.zero_rs = zeros.map((z) => z.r);
+		 this.current_params.zero_is = zeros.map((z) => z.i);
+		 this.current_params.zero_reds = zeros.map((z) => z.red);
+		 this.current_params.zero_greens = zeros.map((z) => z.green);
+		 this.current_params.zero_blues = zeros.map((z) => z.blue);
 	     }
 
 	     viewport_move(viewport) {
@@ -56,8 +83,22 @@
 		 this.maybe_request();
 	     }
 
-	     to_url_params() {
-		 return new URLSearchParams(this.current_params);
+	     zeros_move(zeros) {
+		 this.set_zeros(zeros);
+		 this.maybe_request();
+	     }
+
+	     get_url_params() {
+		 let param_array = [];
+		 for (var [key, values] of Object.entries(this.current_params)) {
+		     if (!Array.isArray(values)) {
+			 values = [values];
+		     }
+		     for (const value of values) {
+			 param_array.push([key, value]);
+		     }
+		 }
+		 return new URLSearchParams(param_array);
 	     }
 
 	     maybe_request() {
@@ -79,7 +120,7 @@
 		     headers: {
 			 'Content-Type': 'application/x-www-form-urlencoded'
 		     },
-		     body: this.to_url_params(),
+		     body: this.get_url_params(),
 		 })
 		     .then((response) => response.blob())
 		     .then((blob) => {
@@ -210,9 +251,32 @@
 	 function main() {
 	     const overlay = document.getElementById("overlay");
 	     const image = document.getElementById("fractal");
-	     const requester = new FractalRequester(image, overlay.width, overlay.height);
+	     var zeros = [
+		 {r: 1.0, i: 0.0, red: 255, green: 0, blue: 0},
+		 {r: -0.5, i: 0.86602540378, red: 0, green: 255, blue: 0},
+		 {r: -0.5, i: -0.86602540378, red: 0, green: 0, blue: 255},
+	     ];
+	     const requester = new FractalRequester(image, overlay.width, overlay.height, zeros);
 	     const tracker = new ViewportTracker(overlay);
 	     tracker.add_callback((viewport) => requester.viewport_move(viewport));
+
+	     // When a randomize button is pressed, we pick random new zeros.
+	     for (var i = 3; i <= 10; i += 1) {
+		 const id = "random_zeros_" + i;
+		 const curr_i = i;
+		 document.getElementById(id).addEventListener("click", function() {
+		     zeros = Array(curr_i).fill().map(() => random_zero());
+		     requester.zeros_move(zeros);
+		 });
+	     }
+
+	     // When the randomize color button is pressed, we keep the same zeros but rzndomize colors.
+	     document.getElementById("random_colors").addEventListener("click", function() {
+		 for (var zero of zeros) {
+		     Object.assign(zero, random_color());
+		 }
+		 requester.zeros_move(zeros);
+	     });
 
 	     // Force an initial request.
 	     tracker.run_callbacks();
@@ -228,6 +292,18 @@
 	    <img id="fractal" src="static/hourglass.png" style="z-index:1"/>
 	</div>
 	<p>Hello World! This is the index page. And now it has more text.</p>
+	<p>
+	    Random zeros:
+	    <button id="random_zeros_3">3</button>
+	    <button id="random_zeros_4">4</button>
+	    <button id="random_zeros_5">5</button>
+	    <button id="random_zeros_6">6</button>
+	    <button id="random_zeros_7">7</button>
+	    <button id="random_zeros_8">8</button>
+	    <button id="random_zeros_9">9</button>
+	    <button id="random_zeros_10">10</button>
+	</p>
+	<p><button id="random_colors">Randomize Colors</button></p>
 	<p id="fps">FPS: ???</p>
     </body>
 </html>

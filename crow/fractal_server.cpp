@@ -3,8 +3,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <random>
 #include <optional>
+#include <set>
 
 #include <png++/png.hpp>
 #include <crow.h>
@@ -20,19 +20,29 @@ crow::query_string GetBodyParams(const crow::request& req) {
   return crow::query_string(fake_url);
 }
 
+std::string ParamsToString(const crow::query_string& params) {
+  std::ostringstream ss;
+  const auto keys = params.keys();
+  const std::set<std::string> unique_keys(keys.begin(), keys.end());
+  for (const std::string& key : unique_keys) {
+    const std::vector<char*> values = params.get_list(key, /*use_brackets=*/false);
+    if (values.size() == 1) {
+      ss << "  " << key << " => " << std::string(values[0]) << std::endl;
+    } else {
+      ss << "  " << key << " => [" << std::endl;
+      for (const char* value : values) {
+	ss << "    " << std::string(value) << "," << std::endl;
+      }
+      ss << "  ]" << std::endl;
+    }
+  }
+  return ss.str();
+}
+
 std::string DrawToPng(const FractalParams& params) {
   png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>>
     image(params.width, params.height);
-
-  std::random_device rd;
-  std::mt19937 twister(rd());
-  std::uniform_real_distribution<> dist(-1.0, 1.0);
-  // const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(dist(twister), dist(twister)),
-  // 						   Complex(dist(twister), dist(twister)),
-  // 						   Complex(dist(twister), dist(twister))});
-  const AnalyzedPolynomial p = AnalyzedPolynomial({Complex(1.0, 0.0),
-						   Complex(-0.5, 0.86602540378),
-						   Complex(-0.5, -0.86602540378)});
+  const AnalyzedPolynomial p = AnalyzedPolynomial(params.zeros);
   std::cout << "Drawing: " << p << std::endl;
 
   const double i_delta = (params.i_max - params.i_min) / params.height;
@@ -43,13 +53,7 @@ std::string DrawToPng(const FractalParams& params) {
     for (size_t x = 0; x < params.width; ++x) {
       const Complex result = Newton(p, Complex(r, i), 100);
       const size_t zero_index = ClosestZero(result, p.zeros);
-      if (zero_index == 0) {
-	image[y][x] = png::rgb_pixel(255, 0, 0);
-      } else if (zero_index == 1) {
-        image[y][x] = png::rgb_pixel(0, 255, 0);
-      } else if (zero_index == 2) {
-	image[y][x] = png::rgb_pixel(0, 0, 255);
-      }
+      image[y][x] = params.colors[zero_index];
       r += r_delta;
     }
     i += i_delta;
@@ -71,11 +75,9 @@ int main() {
   // Fractal image for main page.
   CROW_ROUTE(app, "/fractal").methods(crow::HTTPMethod::POST)
     ([&](const crow::request& req){
-      std::cout << "Got the following params in request:" << std::endl;
       const auto& params = GetBodyParams(req);
-      for (const std::string& key : params.keys()) {
-	std::cout << "  " << key << " => " << std::string(params.get(key)) << std::endl;
-      }
+      std::cout << "Got the following params in request:" << std::endl;
+      std::cout << ParamsToString(params);
       std::optional<FractalParams> fractal_params = FractalParams::Parse(params);
       if (!fractal_params.has_value()) {
 	std::cout << "Malformed params :(" << std::endl;
