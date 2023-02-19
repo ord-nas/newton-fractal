@@ -168,6 +168,10 @@
 	     }
 
 	     wheel(event) {
+		 // Prevent the webpage from scrolling.
+		 event.stopPropagation();
+		 event.preventDefault();
+
 		 var scale_per_pixel = 0.003;
 		 var scale_amount = Math.pow(1 + scale_per_pixel, event.deltaY);
 		 var pixels = this.get_pixels(event);
@@ -219,6 +223,7 @@
     </head>
     <body>
 	<div id="viewport">
+	    <!-- <canvas id="overlay" width="2500px" height="1300px" style="z-index:2"></canvas> -->
 	    <canvas id="overlay" width="1280px" height="720px" style="z-index:2"></canvas>
 	    <img id="fractal" src="static/hourglass.png" style="z-index:1"/>
 	</div>
