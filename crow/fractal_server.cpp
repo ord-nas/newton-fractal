@@ -93,12 +93,12 @@ std::array<T, N> GetBlockValues(T start, T inc) {
 }
 
 template <typename T, size_t N>
-ComplexArray2<T, N*N> GetBlock(const std::array<T, N>& rs,
+ComplexArray<T, N*N> GetBlock(const std::array<T, N>& rs,
 			       const std::array<T, N>& is) {
-  ComplexArray2<T, N*N> block;
+  ComplexArray<T, N*N> block;
   for (size_t i = 0; i < N*N; ++i) {
-    block.rs[i] = rs[i % N];
-    block.is[i] = is[i / N];
+    block.rs(i) = rs[i % N];
+    block.is(i) = is[i / N];
   }
   return block;
 }
@@ -124,36 +124,27 @@ std::string BlockDrawToPng(const FractalParams& params) {
   const AnalyzedPolynomialD p = AnalyzedPolynomialD(params.zeros);
   std::cout << "Drawing: " << p << std::endl;
 
-  using BlockT = ComplexArray2<double, N * N>;
+  using BlockT = ComplexArray<double, N * N>;
   const double i_little_delta = (params.i_max - params.i_min) / height;
   const double r_little_delta = (params.r_max - params.r_min) / width;
   const double i_big_delta = MultByAdding<double, N>(i_little_delta);
   const double r_big_delta = MultByAdding<double, N>(r_little_delta);
   double i = params.i_min;
   for (int y = height - 1; y >= 0; y -= N) {
-    // std::cout << "block_is" << std::endl;
     const std::array<double, N> block_is = GetBlockValues<double, N>(i, i_little_delta);
     double r = params.r_min;
     for (size_t x = 0; x < width; x += N) {
-      // std::cout << "block_rs" << std::endl;
       const std::array<double, N> block_rs = GetBlockValues<double, N>(r, r_little_delta);
-      // std::cout << "get_block" << std::endl;
       BlockT block = GetBlock<double, N>(block_rs, block_is);
-      // std::cout << "netwon" << std::endl;
       size_t iters;
       const BlockT result = Newton(p, block, 100, &iters);
       total_iters += N*N*iters;
-      // std::cout << "post" << std::endl;
       for (size_t block_offset = 0; block_offset < N*N; ++block_offset) {
-	// std::cout << "closest_zero" << std::endl;
 	const size_t zero_index = ClosestZero(result.get(block_offset), p.zeros);
-	// std::cout << "set_pixel" << std::endl;
 	image[y - block_offset / N][x + block_offset % N] = params.colors[zero_index];
       }
-      // std::cout << "done inner iter" << std::endl;
       r += r_big_delta;
     }
-    // std::cout << "done outer iter" << std::endl;
     i += i_big_delta;
   }
 
@@ -230,7 +221,6 @@ bool HasActivePixels(const std::array<std::optional<PixelMetadata>, N>& metadata
   return false;
 }
 
-
 template<typename T>
 std::optional<size_t> GetNewtonResult(const Complex<T>& z,
 				      std::optional<PixelMetadata>& metadata,
@@ -263,10 +253,10 @@ std::string DynamicBlockDrawToPng(const FractalParams& params) {
 			params.width, params.height);
 
   // Fill a block with some complex numbers.
-  ComplexArray2<T, N> block;
+  ComplexArray<T, N> block;
   std::array<std::optional<PixelMetadata>, N> metadata;
   for (size_t b = 0; b < N; ++b) {
-    std::tie(block.rs[b], block.is[b], metadata[b]) = iter.Next();
+    std::tie(block.rs(b), block.is(b), metadata[b]) = iter.Next();
   }
 
   // Keep iterating Newton's algorithm on the block, pulling in new pixels as
@@ -279,7 +269,7 @@ std::string DynamicBlockDrawToPng(const FractalParams& params) {
 	GetNewtonResult(block.get(b), metadata[b], p, 100);
       if (zero_index.has_value()) {
 	image[metadata[b]->y][metadata[b]->x] = params.colors[*zero_index];
-        std::tie(block.rs[b], block.is[b], metadata[b]) = iter.Next();
+        std::tie(block.rs(b), block.is(b), metadata[b]) = iter.Next();
       }
     }
   }
@@ -290,106 +280,7 @@ std::string DynamicBlockDrawToPng(const FractalParams& params) {
   return png_sstrm.str();
 }
 
-
-template <size_t N>
-void DoTest() {
-  {
-    ComplexArray<double, N> a;
-    ComplexArray<double, N> b;
-    for (size_t i = 0; i < N; ++i) {
-      a.values[i] = ComplexD(i, i+1);
-      b.values[i] = ComplexD(i+2, i+3);
-    }
-    a += b;
-    for (size_t i = 0; i < N; ++i) {
-      std::cout << i << ": " << a.values[i] << std::endl;
-    }
-  }
-
-  {
-    ComplexArray2<double, N> a;
-    ComplexArray2<double, N> b;
-    for (size_t i = 0; i < N; ++i) {
-      a.rs[i] = i;
-      a.is[i] = i+1;
-      b.rs[i] = i+2;
-      b.is[i] = i+3;
-    }
-    a += b;
-    for (size_t i = 0; i < N; ++i) {
-      std::cout << i << ": " << ComplexD(a.rs[i], a.is[i]) << std::endl;
-    }
-  }
-}
-
-// template <size_t N>
-// void DoTest2() {
-//   const AnalyzedPolynomialD p = AnalyzedPolynomialD({
-//       ComplexD(1.0, 0.0),
-//       ComplexD(-0.5, 0.86602540378),
-//       ComplexD(-0.5, -0.86602540378)});
-//   ComplexArray<double, N> ca;
-//   for (size_t i = 0; i < N; ++i) {
-//     ca.values[i] = ComplexD(i, i+1);
-//   }
-
-//   ComplexArray<double, N> res = p.polynomial(ca);
-//   std::cout << "Poly: " << p << std::endl;
-//   for (size_t i = 0; i < N; ++i) {
-//     std::cout << "p(" << ca.values[i] << ") = " << res.values[i] << std::endl;
-//   }
-// }
-
-template <size_t N>
-void DoTest3() {
-  const AnalyzedPolynomialF p = AnalyzedPolynomialF({
-      ComplexF(1.0, 0.0),
-      ComplexF(-0.5, 0.86602540378),
-      ComplexF(-0.5, -0.86602540378)});
-  ComplexArray2<float, N> ca;
-  for (size_t i = 0; i < N; ++i) {
-    ca.rs[i] = i;
-    ca.is[i] = i+1;
-  }
-
-  ComplexArray2<float, N> res = p.polynomial(ca);
-  std::cout << "Poly: " << p << std::endl;
-  for (size_t i = 0; i < N; ++i) {
-    std::cout << "p(" << ComplexF(ca.rs[i], ca.is[i]) << ") = " << ComplexF(res.rs[i], res.is[i]) << std::endl;
-  }
-}
-
-template <size_t N>
-void DoTest4() {
-  const AnalyzedPolynomialF p = AnalyzedPolynomialF({
-      ComplexF(1.0, 0.0),
-      ComplexF(-0.5, 0.86602540378),
-      ComplexF(-0.5, -0.86602540378)});
-  ComplexArray2<float, N> ca;
-  for (size_t i = 0; i < N; ++i) {
-    ca.rs[i] = i;
-    ca.is[i] = i+1;
-  }
-
-  ComplexArray2<float, N> res = p(ca);
-  std::cout << "Poly: " << p << std::endl;
-  for (size_t i = 0; i < N; ++i) {
-    std::cout << "p(" << ComplexF(ca.rs[i], ca.is[i]) << ") = " << ComplexF(res.rs[i], res.is[i]) << std::endl;
-  }
-
-  ComplexArray2<float, N> ns = Newton(p, ca, 100);
-  for (size_t i = 0; i < N; ++i) {
-    std::cout << "newton(p, " << ComplexF(ca.rs[i], ca.is[i]) << ") = " << ComplexF(ns.rs[i], ns.is[i]) << std::endl;
-  }
-}
-
 int main() {
-  DoTest<4>();
-
-  // DoTest2<16>();
-  DoTest3<16>();
-  DoTest4<16>();
-
   crow::SimpleApp app; //define your crow application
 
   // Main page.
