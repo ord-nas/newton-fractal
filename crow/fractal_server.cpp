@@ -67,7 +67,7 @@ std::string DrawToPng(const FractalParams& params) {
     T r = params.r_min;
     for (size_t x = 0; x < params.width; ++x) {
       size_t iters;
-      const Complex<T> result = Newton(p, Complex<T>(r, i), 100, &iters);
+      const Complex<T> result = Newton(p, Complex<T>(r, i), params.max_iters, &iters);
       total_iters += iters;
       const size_t zero_index = ClosestZero(result, p.zeros);
       image[y][x] = params.colors[zero_index];
@@ -137,7 +137,7 @@ std::string BlockDrawToPng(const FractalParams& params) {
       const std::array<double, N> block_rs = GetBlockValues<double, N>(r, r_little_delta);
       BlockT block = GetBlock<double, N>(block_rs, block_is);
       size_t iters;
-      const BlockT result = Newton(p, block, 100, &iters);
+      const BlockT result = Newton(p, block, params.max_iters, &iters);
       total_iters += N*N*iters;
       for (size_t block_offset = 0; block_offset < N*N; ++block_offset) {
 	const size_t zero_index = ClosestZero(result.get(block_offset), p.zeros);
@@ -266,7 +266,7 @@ std::string DynamicBlockDrawToPng(const FractalParams& params) {
     total_iters += N;
     for (size_t b = 0; b < N; ++b) {
       std::optional<size_t> zero_index =
-	GetNewtonResult(block.get(b), metadata[b], p, 100);
+	GetNewtonResult(block.get(b), metadata[b], p, params.max_iters);
       if (zero_index.has_value()) {
 	image[metadata[b]->y][metadata[b]->x] = params.colors[*zero_index];
         std::tie(block.rs(b), block.is(b), metadata[b]) = iter.Next();

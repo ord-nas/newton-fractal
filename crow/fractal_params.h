@@ -147,6 +147,7 @@ struct FractalParams {
 	ParseFiniteDouble(url_params, "r_max", &fractal_params.r_max) &&
 	ParsePositiveInt(url_params, "width", &fractal_params.width) &&
 	ParsePositiveInt(url_params, "height", &fractal_params.height) &&
+	ParsePositiveInt(url_params, "max_iters", &fractal_params.max_iters) &&
 	ParseComplexList(url_params, "zero_rs", "zero_is", &fractal_params.zeros) &&
 	ParseColorList(url_params, "zero_reds", "zero_greens", "zero_blues", &fractal_params.colors) &&
 	fractal_params.zeros.size() == fractal_params.colors.size()) {
@@ -161,6 +162,7 @@ struct FractalParams {
   double r_max;
   int width;
   int height;
+  int max_iters;
   std::vector<ComplexD> zeros;
   std::vector<png::rgb_pixel> colors;
 };
