@@ -38,6 +38,13 @@ Then also install some dependencies.
 * Asio: sudo apt install libasio-dev
 * Boost: sudo apt-get install libboost-all-dev
 * PNG++: sudo apt-get install libpng++-dev
+* Eigen: Download and place headers in /usr/include
+  * Note, this is not actually required unless _IMPLEMENT_COMPLEX_ARRAY_WITH_EIGEN_ is set, which it currently *is not*
+  * Download eigen-3.4.0 (from https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz)
+  * Docs that led to this link: https://eigen.tuxfamily.org/index.php?title=Main_Page
+  * Extract the archived, it should be a single directory eigen-3.4.0
+  * The source code is in eigen-3.4.0/Eigen
+  * Copy that into /usr/include: sudo cp -r ~/Downloads/eigen-3.4.0/Eigen/ /usr/include/
 
 ## Compile
 
