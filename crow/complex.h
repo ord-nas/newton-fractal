@@ -6,21 +6,38 @@
 #include <sstream>
 #include <math.h>
 
+template <typename T>
 class Complex;
-Complex operator*(const Complex& a, const Complex& b);
-Complex operator/(const Complex& a, const Complex& b);
 
+template <typename T>
+Complex<T> operator*(const Complex<T>& a, const Complex<T>& b);
+
+template <typename T>
+Complex<T> operator/(const Complex<T>& a, const Complex<T>& b);
+
+using ComplexD = Complex<double>;
+using ComplexF = Complex<float>;
+
+template <typename T>
 class Complex {
  public:
-  Complex() : Complex(0.0, 0.0) {}
-  Complex(double r, double i) : r(r), i(i) {}
+  Complex<T>() : Complex(0.0, 0.0) {}
+  Complex<T>(T r, T i) : r(r), i(i) {}
 
-  double sqr_magnitude() const {
+  T sqr_magnitude() const {
     return r * r + i * i;
   }
 
-  double magnitude() const {
+  T magnitude() const {
     return sqrt(sqr_magnitude());
+  }
+
+  bool CloseTo(const Complex<T>& target,
+	       T convergence_radius,
+	       T sqr_convergence_radius) const {
+    if (std::abs(r - target.r) > convergence_radius) return false;
+    if (std::abs(i - target.i) > convergence_radius) return false;
+    return (*this - target).sqr_magnitude() <= sqr_convergence_radius;
   }
 
   std::string ToString() const {
@@ -29,58 +46,63 @@ class Complex {
     return ss.str();
   }
 
-  friend std::ostream& operator<<(std::ostream& os, const Complex& c) {
+  friend std::ostream& operator<<(std::ostream& os, const Complex<T>& c) {
     os << c.r << "+" << c.i << "i";
     return os;
   }
 
-  Complex& operator+=(const Complex& other) {
+  Complex<T>& operator+=(const Complex<T>& other) {
     r += other.r;
     i += other.i;
     return *this;
   }
 
-  Complex& operator-=(const Complex& other) {
+  Complex<T>& operator-=(const Complex<T>& other) {
     r -= other.r;
     i -= other.i;
     return *this;
   }
 
-  Complex& operator*=(const Complex& other) {
+  Complex<T>& operator*=(const Complex<T>& other) {
     *this = *this * other;
     return *this;
   }
 
-  Complex& operator/=(const Complex& other) {
+  Complex<T>& operator/=(const Complex<T>& other) {
     *this = *this / other;
     return *this;
   }
 
-  double r;
-  double i;
+  T r;
+  T i;
 };
 
-Complex operator+(const Complex& a, const Complex& b) {
-  return Complex(a.r + b.r, a.i + b.i);
+template <typename T>
+Complex<T> operator+(const Complex<T>& a, const Complex<T>& b) {
+  return Complex<T>(a.r + b.r, a.i + b.i);
 }
 
-Complex operator-(const Complex& a, const Complex& b) {
-  return Complex(a.r - b.r, a.i - b.i);
+template <typename T>
+Complex<T> operator-(const Complex<T>& a, const Complex<T>& b) {
+  return Complex<T>(a.r - b.r, a.i - b.i);
 }
 
-Complex operator*(const Complex& a, const Complex& b) {
-  return Complex(a.r * b.r - a.i * b.i,
-		 a.r * b.i + a.i * b.r);
+template <typename T>
+Complex<T> operator*(const Complex<T>& a, const Complex<T>& b) {
+  return Complex<T>(a.r * b.r - a.i * b.i,
+		    a.r * b.i + a.i * b.r);
 }
 
-Complex operator/(const Complex& a, const Complex& b) {
-  const double denom = b.r * b.r + b.i * b.i;
-  return Complex((a.r * b.r + a.i * b.i) / denom,
-		 (a.i * b.r - a.r * b.i) / denom);
+template <typename T>
+Complex<T> operator/(const Complex<T>& a, const Complex<T>& b) {
+  const T denom = b.r * b.r + b.i * b.i;
+  return Complex<T>((a.r * b.r + a.i * b.i) / denom,
+		    (a.i * b.r - a.r * b.i) / denom);
 }
 
-Complex operator-(const Complex& a) {
-  return Complex(-a.r, -a.i);
+template <typename T>
+Complex<T> operator-(const Complex<T>& a) {
+  return Complex<T>(-a.r, -a.i);
 }
 
 #endif // _CROW_FRACTAL_SERVER_COMPLEX_

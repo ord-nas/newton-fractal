@@ -88,7 +88,7 @@ bool ParseFiniteDouble(const crow::query_string& url_params,
 bool ParseComplexList(const crow::query_string& url_params,
 		      const std::string& real_key,
 		      const std::string& img_key,
-		      std::vector<Complex>* output) {
+		      std::vector<ComplexD>* output) {
   const std::vector<char*> rs = url_params.get_list(real_key, /*use_brackets=*/false);
   const std::vector<char*> is = url_params.get_list(img_key, /*use_brackets=*/false);
   if (rs.empty() || is.empty() || rs.size() != is.size()) {
@@ -96,7 +96,7 @@ bool ParseComplexList(const crow::query_string& url_params,
   }
 
   const size_t N = rs.size();
-  std::vector<Complex> cs(N);
+  std::vector<ComplexD> cs(N);
   for (size_t i = 0; i < N; ++i) {
     if (!ToFiniteDouble(rs[i], &cs[i].r) ||
 	!ToFiniteDouble(is[i], &cs[i].i)) {
@@ -161,7 +161,7 @@ struct FractalParams {
   double r_max;
   int width;
   int height;
-  std::vector<Complex> zeros;
+  std::vector<ComplexD> zeros;
   std::vector<png::rgb_pixel> colors;
 };
 
