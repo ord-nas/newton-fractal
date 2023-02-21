@@ -15,7 +15,6 @@
 	<script>
 	 var cycling = false;
 	 var events = [];
-	 var fractal_endpoint = "fractal";
 
 	 function shallow_equal(a, b) {
 	     if (a === null && b === null) {
@@ -56,41 +55,58 @@
 	     };
 	 }
 
+	 function get_selected_fractal_endpoint() {
+	     var strategy = document.getElementById("strategy").value;
+	     var precision = document.getElementById("precision").value;
+	     var endpoint;
+	     switch (strategy) {
+		 case 'naive':
+		     endpoint = "fractal";
+		     break;
+		 case 'block':
+		     endpoint = "fractal_dynamic_block";
+		     break;
+		 case 'threaded':
+		 default:
+		     endpoint = "fractal_threaded";
+		     break;
+	     }
+	     if (precision === "single") {
+		 endpoint += "_float";
+	     }
+	     return endpoint;
+	 }
+
 	 class FractalRequester {
-	     constructor(image, width, height, zeros) {
+	     constructor(image, width, height) {
 		 this.image = image;
 		 this.current_params = {
 		     width: width,
 		     height: height,
 		     max_iters: 100,
 		 };
-		 this.set_zeros(zeros);
 		 this.last_request_params = {};
 		 this.pending_request = null;
 	     }
 
-	     set_zeros(zeros) {
-		 this.current_params.zero_rs = zeros.map((z) => z.r);
-		 this.current_params.zero_is = zeros.map((z) => z.i);
-		 this.current_params.zero_reds = zeros.map((z) => z.red);
-		 this.current_params.zero_greens = zeros.map((z) => z.green);
-		 this.current_params.zero_blues = zeros.map((z) => z.blue);
-	     }
+	     view_state_changed(new_state) {
+		 // Pull out viewport params.
+		 this.current_params.i_min = new_state.viewport.i_min;
+		 this.current_params.i_max = new_state.viewport.i_max;
+		 this.current_params.r_min = new_state.viewport.r_min;
+		 this.current_params.r_max = new_state.viewport.r_max;
 
-	     viewport_move(viewport) {
-		 this.current_params.i_min = viewport.i_min;
-		 this.current_params.i_max = viewport.i_max;
-		 this.current_params.r_min = viewport.r_min;
-		 this.current_params.r_max = viewport.r_max;
+		 // Pull out zero params.
+		 this.current_params.zero_rs = new_state.zeros.map((z) => z.r);
+		 this.current_params.zero_is = new_state.zeros.map((z) => z.i);
+		 this.current_params.zero_reds = new_state.zeros.map((z) => z.red);
+		 this.current_params.zero_greens = new_state.zeros.map((z) => z.green);
+		 this.current_params.zero_blues = new_state.zeros.map((z) => z.blue);
+
 		 this.maybe_request();
 	     }
 
-	     zeros_move(zeros) {
-		 this.set_zeros(zeros);
-		 this.maybe_request();
-	     }
-
-	     max_iters_change(max_iters) {
+	     max_iters_changed(max_iters) {
 		 this.current_params.max_iters = max_iters;
 		 this.maybe_request();
 	     }
@@ -122,7 +138,7 @@
 		 // Schedule a new request!
 		 Object.assign(this.last_request_params, this.current_params);
 		 console.log("Requesting", this.current_params);
-		 this.pending_request = fetch(fractal_endpoint, {
+		 this.pending_request = fetch(get_selected_fractal_endpoint(), {
 		     method: 'POST',
 		     headers: {
 			 'Content-Type': 'application/x-www-form-urlencoded'
@@ -147,7 +163,7 @@
 	 // Pixel coordinates are in the normal pixel sense, positive in the right and down directions.
 	 // Complex coordinates are in the normal math sense, positive in the right and *up* directions.
 	 class ViewportTracker {
-	     constructor(canvas) {
+	     constructor(canvas, zeros) {
 		 this.canvas = canvas;
 		 this.origin_i = 2.5 / canvas.width * canvas.height;
 		 this.origin_r = -2.5;
@@ -156,13 +172,16 @@
 		 // Only set when we're in a mouse drag event.
 		 this.last_pixels = null;
 
+		 // Current set of zeros.
+		 this.zeros = zeros;
+
 		 // Attach canvas event listeners.
 		 canvas.addEventListener("mousedown", (event) => this.mousedown(event));
 		 canvas.addEventListener("mouseup", (event) => this.mouseup(event));
 		 canvas.addEventListener("mousemove", (event) => this.mousemove(event));
 		 canvas.addEventListener("wheel", (event) => this.wheel(event));
 
-		 // Callbacks when the viewport moves.
+		 // Callbacks when state changes.
 		 this.callbacks = [];
 	     }
 
@@ -182,19 +201,22 @@
 		 };
 	     }
 
-	     get_viewport() {
+	     get_state() {
 		 return {
-		     i_min: this.origin_i - this.range_r / this.canvas.width * this.canvas.height,
-		     i_max: this.origin_i,
-		     r_min: this.origin_r,
-		     r_max: this.origin_r + this.range_r,
+		     zeros: this.zeros,
+		     viewport: {
+			 i_min: this.origin_i - this.range_r / this.canvas.width * this.canvas.height,
+			 i_max: this.origin_i,
+			 r_min: this.origin_r,
+			 r_max: this.origin_r + this.range_r,
+		     }
 		 };
 	     }
 
 	     run_callbacks() {
-		 var viewport = this.get_viewport();
+		 var state = this.get_state();
 		 for (var callback of this.callbacks) {
-		     callback(viewport);
+		     callback(state);
 		 }
 	     }
 
@@ -235,6 +257,15 @@
 		 this.run_callbacks();
 	     }
 
+	     set_zeros(zeros) {
+		 this.zeros = zeros;
+		 this.run_callbacks();
+	     }
+
+	     get_zeros(zeros) {
+		 return this.zeros;
+	     }
+
 	     add_callback(callback) {
 		 this.callbacks.push(callback);
 	     }
@@ -258,38 +289,39 @@
 	 function main() {
 	     const overlay = document.getElementById("overlay");
 	     const image = document.getElementById("fractal");
-	     var zeros = [
+	     var initial_zeros = [
 		 {r: 1.0, i: 0.0, red: 255, green: 0, blue: 0},
 		 {r: -0.5, i: 0.86602540378, red: 0, green: 255, blue: 0},
 		 {r: -0.5, i: -0.86602540378, red: 0, green: 0, blue: 255},
 	     ];
-	     const requester = new FractalRequester(image, overlay.width, overlay.height, zeros);
-	     const tracker = new ViewportTracker(overlay);
-	     tracker.add_callback((viewport) => requester.viewport_move(viewport));
+	     const requester = new FractalRequester(image, overlay.width, overlay.height);
+	     const tracker = new ViewportTracker(overlay, initial_zeros);
+	     tracker.add_callback((new_state) => requester.view_state_changed(new_state));
 
 	     // When a randomize button is pressed, we pick random new zeros.
 	     for (var i = 3; i <= 10; i += 1) {
 		 const id = "random_zeros_" + i;
 		 const curr_i = i;
 		 document.getElementById(id).addEventListener("click", function() {
-		     zeros = Array(curr_i).fill().map(() => random_zero());
-		     requester.zeros_move(zeros);
+		     var zeros = Array(curr_i).fill().map(() => random_zero());
+		     tracker.set_zeros(zeros);
 		 });
 	     }
 
 	     // When the randomize color button is pressed, we keep the same zeros but rzndomize colors.
 	     document.getElementById("random_colors").addEventListener("click", function() {
+		 var zeros = tracker.get_zeros();
 		 for (var zero of zeros) {
 		     Object.assign(zero, random_color());
 		 }
-		 requester.zeros_move(zeros);
+		 tracker.set_zeros(zeros);
 	     });
 
 	     // When the maximum iteration count changes, sanity check and update.
 	     document.getElementById("max_iters").addEventListener("input", function(event) {
 		 var value = event.target.valueAsNumber;
 		 if (isFinite(value) && value >= event.target.min && value <= event.target.max) {
-		     requester.max_iters_change(value);
+		     requester.max_iters_changed(value);
 		 }
 	     });
 
@@ -306,7 +338,20 @@
 	    <canvas id="overlay" width="1280px" height="720px" style="z-index:2"></canvas>
 	    <img id="fractal" src="static/hourglass.png" style="z-index:1"/>
 	</div>
-	<p>Maximum iterations: <input id="max_iters" type="number" min="1" max="100" step="1" value="100"></p>
+	<p>
+	    Maximum iterations: <input id="max_iters" type="number" min="1" max="100" step="1" value="100">
+	    Computation strategy:
+	    <select id="strategy">
+		<option value="threaded">Threaded Dynamic Block</option>
+		<option value="block">Dynamic Block</option>
+		<option value="naive">Naive</option>
+            </select>
+	    Numerical percision:
+	    <select id="precision">
+		<option value="single">Single</option>
+		<option value="double">Double</option>
+            </select>
+	</p>
 	<p>
 	    Random zeros:
 	    <button id="random_zeros_3">3</button>
