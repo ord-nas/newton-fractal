@@ -1,369 +1,435 @@
 <!DOCTYPE html>
 <html>
     <head>
-	<style type="text/css">
-	 #viewport {
-	     display: grid;
-	     grid-template: 1fr / 1fr;
-	     place-items: start;
-	 }
-	 #viewport > * {
-	     grid-column: 1 / 1;
-	     grid-row: 1 / 1;
-	 }
-	</style>
-	<script>
-	 var cycling = false;
-	 var events = [];
+        <style type="text/css">
+         #viewport {
+             display: grid;
+             grid-template: 1fr / 1fr;
+             place-items: start;
+         }
+         #viewport > * {
+             grid-column: 1 / 1;
+             grid-row: 1 / 1;
+         }
+        </style>
+        <script>
+         var cycling = false;
+         var events = [];
 
-	 function shallow_equal(a, b) {
-	     if (a === null && b === null) {
-		 return true;
-	     }
+         function shallow_equal(a, b) {
+             if (a === null && b === null) {
+                 return true;
+             }
 
-	     if (a === null || b === null) {
-		 return false;
-	     }
+             if (a === null || b === null) {
+                 return false;
+             }
 
-	     if (Object.keys(a).length !== Object.keys(b).length) {
-		 return false;
-	     }
+             if (Object.keys(a).length !== Object.keys(b).length) {
+                 return false;
+             }
 
-	     for (let key of Object.keys(a)) {
-		 if (a[key] !== b[key]) {
-		     return false;
-		 }
-	     }
-	     return true;
-	 }
+             for (let key of Object.keys(a)) {
+                 if (a[key] !== b[key]) {
+                     return false;
+                 }
+             }
+             return true;
+         }
 
-	 function random_zero() {
-	     return {
-		 r: Math.random() * 2.0 - 1,
-		 i: Math.random() * 2.0 - 1,
-		 red: Math.floor(Math.random() * 255),
-		 green: Math.floor(Math.random() * 255),
-		 blue: Math.floor(Math.random() * 255),
-	     };
-	 }
+         function random_zero() {
+             return {
+                 r: Math.random() * 2.0 - 1,
+                 i: Math.random() * 2.0 - 1,
+                 red: Math.floor(Math.random() * 255),
+                 green: Math.floor(Math.random() * 255),
+                 blue: Math.floor(Math.random() * 255),
+             };
+         }
 
-	 function random_color() {
-	     return {
-		 red: Math.floor(Math.random() * 255),
-		 green: Math.floor(Math.random() * 255),
-		 blue: Math.floor(Math.random() * 255),
-	     };
-	 }
+         function random_color() {
+             return {
+                 red: Math.floor(Math.random() * 255),
+                 green: Math.floor(Math.random() * 255),
+                 blue: Math.floor(Math.random() * 255),
+             };
+         }
 
-	 function get_selected_fractal_endpoint() {
-	     var strategy = document.getElementById("strategy").value;
-	     var precision = document.getElementById("precision").value;
-	     var endpoint;
-	     switch (strategy) {
-		 case 'naive':
-		     endpoint = "fractal";
-		     break;
-		 case 'block':
-		     endpoint = "fractal_dynamic_block";
-		     break;
-		 case 'threaded':
-		 default:
-		     endpoint = "fractal_threaded";
-		     break;
-	     }
-	     if (precision === "single") {
-		 endpoint += "_float";
-	     }
-	     return endpoint;
-	 }
+         function get_selected_fractal_endpoint() {
+             var strategy = document.getElementById("strategy").value;
+             var precision = document.getElementById("precision").value;
+             var endpoint;
+             switch (strategy) {
+                 case 'naive':
+                     endpoint = "fractal";
+                     break;
+                 case 'block':
+                     endpoint = "fractal_dynamic_block";
+                     break;
+                 case 'threaded':
+                 default:
+                     endpoint = "fractal_threaded";
+                     break;
+             }
+             if (precision === "single") {
+                 endpoint += "_float";
+             }
+             return endpoint;
+         }
 
-	 class FractalRequester {
-	     constructor(image, width, height) {
-		 this.image = image;
-		 this.current_params = {
-		     width: width,
-		     height: height,
-		     max_iters: 100,
-		 };
-		 this.last_request_params = {};
-		 this.pending_request = null;
-	     }
+         class FractalRequester {
+             constructor(image, width, height) {
+                 this.image = image;
+                 this.current_params = {
+                     width: width,
+                     height: height,
+                     max_iters: 100,
+                 };
+                 this.last_request_params = {};
+                 this.pending_request = null;
+             }
 
-	     view_state_changed(new_state) {
-		 // Pull out viewport params.
-		 this.current_params.i_min = new_state.viewport.i_min;
-		 this.current_params.i_max = new_state.viewport.i_max;
-		 this.current_params.r_min = new_state.viewport.r_min;
-		 this.current_params.r_max = new_state.viewport.r_max;
+             view_state_changed(new_state) {
+                 // Pull out viewport params.
+                 this.current_params.i_min = new_state.viewport.i_min;
+                 this.current_params.i_max = new_state.viewport.i_max;
+                 this.current_params.r_min = new_state.viewport.r_min;
+                 this.current_params.r_max = new_state.viewport.r_max;
 
-		 // Pull out zero params.
-		 this.current_params.zero_rs = new_state.zeros.map((z) => z.r);
-		 this.current_params.zero_is = new_state.zeros.map((z) => z.i);
-		 this.current_params.zero_reds = new_state.zeros.map((z) => z.red);
-		 this.current_params.zero_greens = new_state.zeros.map((z) => z.green);
-		 this.current_params.zero_blues = new_state.zeros.map((z) => z.blue);
+                 // Pull out zero params.
+                 this.current_params.zero_rs = new_state.zeros.map((z) => z.r);
+                 this.current_params.zero_is = new_state.zeros.map((z) => z.i);
+                 this.current_params.zero_reds = new_state.zeros.map((z) => z.red);
+                 this.current_params.zero_greens = new_state.zeros.map((z) => z.green);
+                 this.current_params.zero_blues = new_state.zeros.map((z) => z.blue);
 
-		 this.maybe_request();
-	     }
+                 this.maybe_request();
+             }
 
-	     max_iters_changed(max_iters) {
-		 this.current_params.max_iters = max_iters;
-		 this.maybe_request();
-	     }
+             max_iters_changed(max_iters) {
+                 this.current_params.max_iters = max_iters;
+                 this.maybe_request();
+             }
 
-	     get_url_params() {
-		 let param_array = [];
-		 for (var [key, values] of Object.entries(this.current_params)) {
-		     if (!Array.isArray(values)) {
-			 values = [values];
-		     }
-		     for (const value of values) {
-			 param_array.push([key, value]);
-		     }
-		 }
-		 return new URLSearchParams(param_array);
-	     }
+             get_url_params() {
+                 let param_array = [];
+                 for (var [key, values] of Object.entries(this.current_params)) {
+                     if (!Array.isArray(values)) {
+                         values = [values];
+                     }
+                     for (const value of values) {
+                         param_array.push([key, value]);
+                     }
+                 }
+                 return new URLSearchParams(param_array);
+             }
 
-	     maybe_request() {
-		 // If we have a pending request, nothing to do.
-		 if (this.pending_request !== null) {
-		     return;
-		 }
+             maybe_request() {
+                 // If we have a pending request, nothing to do.
+                 if (this.pending_request !== null) {
+                     return;
+                 }
 
-		 // If the params are the same as our preview request, nothing to do.
-		 if (shallow_equal(this.last_request_params, this.current_params)) {
-		     return;
-		 }
+                 // If the params are the same as our preview request, nothing to do.
+                 if (shallow_equal(this.last_request_params, this.current_params)) {
+                     return;
+                 }
 
-		 // Schedule a new request!
-		 Object.assign(this.last_request_params, this.current_params);
-		 console.log("Requesting", this.current_params);
-		 this.pending_request = fetch(get_selected_fractal_endpoint(), {
-		     method: 'POST',
-		     headers: {
-			 'Content-Type': 'application/x-www-form-urlencoded'
-		     },
-		     body: this.get_url_params(),
-		 })
-		     .then((response) => response.blob())
-		     .then((blob) => {
-			 const objectURL = URL.createObjectURL(blob);
-			 var old_url = this.image.src;
-			 this.image.src = objectURL;
-			 URL.revokeObjectURL(old_url);
-			 this.pending_request = null;
-			 this.maybe_request();
-			 compute_fps();
-		     });
-	     }
+                 // Schedule a new request!
+                 Object.assign(this.last_request_params, this.current_params);
+                 console.log("Requesting", this.current_params);
+                 this.pending_request = fetch(get_selected_fractal_endpoint(), {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/x-www-form-urlencoded'
+                     },
+                     body: this.get_url_params(),
+                 })
+                     .then((response) => response.blob())
+                     .then((blob) => {
+                         const objectURL = URL.createObjectURL(blob);
+                         var old_url = this.image.src;
+                         this.image.src = objectURL;
+                         URL.revokeObjectURL(old_url);
+                         this.pending_request = null;
+                         this.maybe_request();
+                         compute_fps();
+                     });
+             }
 
-	 }
+         }
 
-	 // Origin for both coordinate systems is top left.
-	 // Pixel coordinates are in the normal pixel sense, positive in the right and down directions.
-	 // Complex coordinates are in the normal math sense, positive in the right and *up* directions.
-	 class ViewportTracker {
-	     constructor(canvas, zeros) {
-		 this.canvas = canvas;
-		 this.origin_i = 2.5 / canvas.width * canvas.height;
-		 this.origin_r = -2.5;
-		 this.range_r = 5.0;
-		 // Last position of the mouse on this element, in pixels.
-		 // Only set when we're in a mouse drag event.
-		 this.last_pixels = null;
+         // Origin for both coordinate systems is top left.
+         // Pixel coordinates are in the normal pixel sense, positive in the right and down directions.
+         // Complex coordinates are in the normal math sense, positive in the right and *up* directions.
+         class ViewportTracker {
+             constructor(canvas, zeros) {
+                 this.canvas = canvas;
+                 this.ctx = canvas.getContext("2d");
+                 this.origin_i = 2.5 / canvas.width * canvas.height;
+                 this.origin_r = -2.5;
+                 this.range_r = 5.0;
+                 // Last position of the mouse on this element, in pixels.
+                 // Only set when we're in a mouse drag event.
+                 this.last_pixels = null;
+                 // The index of the zero we're currently moving.
+                 // Only set when we're in  a mouse draw event.
+                 // Exactly one of zero_index or last_pixels will be set at a time.
+                 this.zero_index = null;
 
-		 // Current set of zeros.
-		 this.zeros = zeros;
+                 // Current set of zeros.
+                 this.zeros = zeros;
 
-		 // Attach canvas event listeners.
-		 canvas.addEventListener("mousedown", (event) => this.mousedown(event));
-		 canvas.addEventListener("mouseup", (event) => this.mouseup(event));
-		 canvas.addEventListener("mousemove", (event) => this.mousemove(event));
-		 canvas.addEventListener("wheel", (event) => this.wheel(event));
+                 // Attach canvas event listeners.
+                 canvas.addEventListener("mousedown", (event) => this.mousedown(event));
+                 canvas.addEventListener("mouseup", (event) => this.mouseup(event));
+                 canvas.addEventListener("mousemove", (event) => this.mousemove(event));
+                 canvas.addEventListener("wheel", (event) => this.wheel(event));
 
-		 // Callbacks when state changes.
-		 this.callbacks = [];
-	     }
+                 // Callbacks when state changes.
+                 this.callbacks = [];
 
-	     get_pixels(event) {
-		 var rect = this.canvas.getBoundingClientRect();
-		 return {
-		     x: event.clientX - rect.left,
-		     y: event.clientY - rect.top,
-		 };
-	     }
+                 // Draw the current state.
+                 this.draw();
+             }
 
-	     get_complex(event) {
-		 var pixels = this.get_pixels(event);
-		 return {
-		     r: this.origin_r + (pixels.x / this.canvas.width * this.range_r),
-		     i: this.origin_i - (pixels.y / this.canvas.width * this.range_r),
-		 };
-	     }
+             draw() {
+                 // Clear the canvas first.
+                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-	     get_state() {
-		 return {
-		     zeros: this.zeros,
-		     viewport: {
-			 i_min: this.origin_i - this.range_r / this.canvas.width * this.canvas.height,
-			 i_max: this.origin_i,
-			 r_min: this.origin_r,
-			 r_max: this.origin_r + this.range_r,
-		     }
-		 };
-	     }
+                 // Draw circles at each zero location.
+                 for (var zero of this.zeros) {
+                     // Get the location of this zero.
+                     var center = this.complex_to_pixels(zero.r, zero.i);
+                     this.ctx.fillStyle = "rgb(255,255,255)";
+                     this.ctx.beginPath();
+                     this.ctx.arc(center.x, center.y, 11, 0, 2 * Math.PI);
+                     this.ctx.fill();
+                     this.ctx.fillStyle = "rgb(0,0,0)";
+                     this.ctx.beginPath();
+                     this.ctx.arc(center.x, center.y, 10, 0, 2 * Math.PI);
+                     this.ctx.fill();
+                     this.ctx.fillStyle = "rgb(255,255,255)";
+                     this.ctx.beginPath();
+                     this.ctx.arc(center.x, center.y, 9, 0, 2 * Math.PI);
+                     this.ctx.fill();
+                     this.ctx.fillStyle = `rgb(${zero.red}, ${zero.green}, ${zero.blue})`;
+                     this.ctx.beginPath();
+                     this.ctx.arc(center.x, center.y, 8, 0, 2 * Math.PI);
+                     this.ctx.fill();
+                 }
+             }
 
-	     run_callbacks() {
-		 var state = this.get_state();
-		 for (var callback of this.callbacks) {
-		     callback(state);
-		 }
-	     }
+             get_pixels(event) {
+                 var rect = this.canvas.getBoundingClientRect();
+                 return {
+                     x: event.clientX - rect.left,
+                     y: event.clientY - rect.top,
+                 };
+             }
 
-	     mousedown(event) {
-		 this.last_pixels = this.get_pixels(event);
-	     }
+             get_complex(event) {
+                 var pixels = this.get_pixels(event);
+                 return {
+                     r: this.origin_r + (pixels.x / this.canvas.width * this.range_r),
+                     i: this.origin_i - (pixels.y / this.canvas.width * this.range_r),
+                 };
+             }
 
-	     mouseup(event) {
-		 this.last_pixels = null;
-	     }
+             complex_to_pixels(r, i) {
+                 return {
+                     x: (r - this.origin_r) / this.range_r * this.canvas.width,
+                     y: (this.origin_i - i) / this.range_r * this.canvas.width,
+                 };
+             }
 
-	     mousemove(event) {
-		 if (this.last_pixels === null) return;
-		 var current_pixels = this.get_pixels(event);
-		 this.origin_r -= (current_pixels.x - this.last_pixels.x) / this.canvas.width * this.range_r;
-		 this.origin_i += (current_pixels.y - this.last_pixels.y) / this.canvas.width * this.range_r;
-		 this.last_pixels = current_pixels;
-		 this.run_callbacks();
-	     }
+             get_state() {
+                 return {
+                     zeros: this.zeros,
+                     viewport: {
+                         i_min: this.origin_i - this.range_r / this.canvas.width * this.canvas.height,
+                         i_max: this.origin_i,
+                         r_min: this.origin_r,
+                         r_max: this.origin_r + this.range_r,
+                     }
+                 };
+             }
 
-	     wheel(event) {
-		 // Prevent the webpage from scrolling.
-		 event.stopPropagation();
-		 event.preventDefault();
+             run_callbacks() {
+                 var state = this.get_state();
+                 for (var callback of this.callbacks) {
+                     callback(state);
+                 }
+             }
 
-		 var scale_per_pixel = 0.003;
-		 var scale_amount = Math.pow(1 + scale_per_pixel, event.deltaY);
-		 var pixels = this.get_pixels(event);
-		 var complex = this.get_complex(event);
+             mousedown(event) {
+                 this.last_pixels = null;
+                 this.zero_index = null;
 
-		 // Adjust the new range based on the scale.
-		 this.range_r *= scale_amount;
+                 var pixels = this.get_pixels(event);
+                 for (var i = 0; i < this.zeros.length; i += 1) {
+                     // Get the location of this zero.
+                     var center = this.complex_to_pixels(this.zeros[i].r, this.zeros[i].i);
+                     // Check if we're close enough to this zero.
+                     if ((center.x - pixels.x)**2 + (center.y - pixels.y)**2 <= 100) {
+                         this.zero_index = i;
+                         return;
+                     }
+                 }
 
-		 // Figure out how to adjust the origin so that the same point stays under the mouse.
-		 this.origin_r = complex.r - pixels.x / this.canvas.width * this.range_r;
-		 this.origin_i = complex.i + pixels.y / this.canvas.width * this.range_r;
+                 this.last_pixels = pixels;
+             }
 
-		 this.run_callbacks();
-	     }
+             mouseup(event) {
+                 this.last_pixels = null;
+                 this.zero_index = null;
+             }
 
-	     set_zeros(zeros) {
-		 this.zeros = zeros;
-		 this.run_callbacks();
-	     }
+             mousemove(event) {
+                 if (this.last_pixels === null && this.zero_index === null) return;
 
-	     get_zeros(zeros) {
-		 return this.zeros;
-	     }
+                 if (this.last_pixels !== null) {
+                     var current_pixels = this.get_pixels(event);
+                     this.origin_r -= (current_pixels.x - this.last_pixels.x) / this.canvas.width * this.range_r;
+                     this.origin_i += (current_pixels.y - this.last_pixels.y) / this.canvas.width * this.range_r;
+                     this.last_pixels = current_pixels;
+                 } else {
+                     Object.assign(this.zeros[this.zero_index], this.get_complex(event));
+                 }
 
-	     add_callback(callback) {
-		 this.callbacks.push(callback);
-	     }
-	 }
+                 this.draw();
+                 this.run_callbacks();
+             }
 
-	 function compute_fps() {
-	     var now = Date.now();
-	     while (events.length > 0 && events[0] < now - 1000) {
-		 events.shift();
-	     }
-	     events.push(now);
-	     document.getElementById("fps").innerHTML = "FPS: " + events.length;
-	 }
+             wheel(event) {
+                 // Prevent the webpage from scrolling.
+                 event.stopPropagation();
+                 event.preventDefault();
 
-	 function toggle_cycle() {
-	     cycling = !cycling;
-	     console.log(cycling);
-	     if (cycling) next_image();
-	 }
+                 var scale_per_pixel = 0.003;
+                 var scale_amount = Math.pow(1 + scale_per_pixel, event.deltaY);
+                 var pixels = this.get_pixels(event);
+                 var complex = this.get_complex(event);
 
-	 function main() {
-	     const overlay = document.getElementById("overlay");
-	     const image = document.getElementById("fractal");
-	     var initial_zeros = [
-		 {r: 1.0, i: 0.0, red: 255, green: 0, blue: 0},
-		 {r: -0.5, i: 0.86602540378, red: 0, green: 255, blue: 0},
-		 {r: -0.5, i: -0.86602540378, red: 0, green: 0, blue: 255},
-	     ];
-	     const requester = new FractalRequester(image, overlay.width, overlay.height);
-	     const tracker = new ViewportTracker(overlay, initial_zeros);
-	     tracker.add_callback((new_state) => requester.view_state_changed(new_state));
+                 // Adjust the new range based on the scale.
+                 this.range_r *= scale_amount;
 
-	     // When a randomize button is pressed, we pick random new zeros.
-	     for (var i = 3; i <= 10; i += 1) {
-		 const id = "random_zeros_" + i;
-		 const curr_i = i;
-		 document.getElementById(id).addEventListener("click", function() {
-		     var zeros = Array(curr_i).fill().map(() => random_zero());
-		     tracker.set_zeros(zeros);
-		 });
-	     }
+                 // Figure out how to adjust the origin so that the same point stays under the mouse.
+                 this.origin_r = complex.r - pixels.x / this.canvas.width * this.range_r;
+                 this.origin_i = complex.i + pixels.y / this.canvas.width * this.range_r;
 
-	     // When the randomize color button is pressed, we keep the same zeros but rzndomize colors.
-	     document.getElementById("random_colors").addEventListener("click", function() {
-		 var zeros = tracker.get_zeros();
-		 for (var zero of zeros) {
-		     Object.assign(zero, random_color());
-		 }
-		 tracker.set_zeros(zeros);
-	     });
+                 this.draw();
+                 this.run_callbacks();
+             }
 
-	     // When the maximum iteration count changes, sanity check and update.
-	     document.getElementById("max_iters").addEventListener("input", function(event) {
-		 var value = event.target.valueAsNumber;
-		 if (isFinite(value) && value >= event.target.min && value <= event.target.max) {
-		     requester.max_iters_changed(value);
-		 }
-	     });
+             set_zeros(zeros) {
+                 this.zeros = zeros;
+                 this.draw();
+                 this.run_callbacks();
+             }
 
-	     // Force an initial request.
-	     tracker.run_callbacks();
-	 }
+             get_zeros(zeros) {
+                 return this.zeros;
+             }
 
-	 addEventListener("load", (event) => {main();});
-	</script>
+             add_callback(callback) {
+                 this.callbacks.push(callback);
+             }
+         }
+
+         function compute_fps() {
+             var now = Date.now();
+             while (events.length > 0 && events[0] < now - 1000) {
+                 events.shift();
+             }
+             events.push(now);
+             document.getElementById("fps").innerHTML = "FPS: " + events.length;
+         }
+
+         function toggle_cycle() {
+             cycling = !cycling;
+             console.log(cycling);
+             if (cycling) next_image();
+         }
+
+         function main() {
+             const overlay = document.getElementById("overlay");
+             const image = document.getElementById("fractal");
+             var initial_zeros = [
+                 {r: 1.0, i: 0.0, red: 255, green: 0, blue: 0},
+                 {r: -0.5, i: 0.86602540378, red: 0, green: 255, blue: 0},
+                 {r: -0.5, i: -0.86602540378, red: 0, green: 0, blue: 255},
+             ];
+             const requester = new FractalRequester(image, overlay.width, overlay.height);
+             const tracker = new ViewportTracker(overlay, initial_zeros);
+             tracker.add_callback((new_state) => requester.view_state_changed(new_state));
+
+             // When a randomize button is pressed, we pick random new zeros.
+             for (var i = 3; i <= 10; i += 1) {
+                 const id = "random_zeros_" + i;
+                 const curr_i = i;
+                 document.getElementById(id).addEventListener("click", function() {
+                     var zeros = Array(curr_i).fill().map(() => random_zero());
+                     tracker.set_zeros(zeros);
+                 });
+             }
+
+             // When the randomize color button is pressed, we keep the same zeros but rzndomize colors.
+             document.getElementById("random_colors").addEventListener("click", function() {
+                 var zeros = tracker.get_zeros();
+                 for (var zero of zeros) {
+                     Object.assign(zero, random_color());
+                 }
+                 tracker.set_zeros(zeros);
+             });
+
+             // When the maximum iteration count changes, sanity check and update.
+             document.getElementById("max_iters").addEventListener("input", function(event) {
+                 var value = event.target.valueAsNumber;
+                 if (isFinite(value) && value >= event.target.min && value <= event.target.max) {
+                     requester.max_iters_changed(value);
+                 }
+             });
+
+             // Force an initial request.
+             tracker.run_callbacks();
+         }
+
+         addEventListener("load", (event) => {main();});
+        </script>
     </head>
     <body>
-	<div id="viewport">
-	    <!-- <canvas id="overlay" width="2500px" height="1300px" style="z-index:2"></canvas> -->
-	    <canvas id="overlay" width="1280px" height="720px" style="z-index:2"></canvas>
-	    <img id="fractal" src="static/hourglass.png" style="z-index:1"/>
-	</div>
-	<p>
-	    Maximum iterations: <input id="max_iters" type="number" min="1" max="100" step="1" value="100">
-	    Computation strategy:
-	    <select id="strategy">
-		<option value="threaded">Threaded Dynamic Block</option>
-		<option value="block">Dynamic Block</option>
-		<option value="naive">Naive</option>
+        <div id="viewport">
+            <!-- <canvas id="overlay" width="2500px" height="1300px" style="z-index:2"></canvas> -->
+            <canvas id="overlay" width="1280px" height="720px" style="z-index:2"></canvas>
+            <img id="fractal" src="static/hourglass.png" style="z-index:1"/>
+        </div>
+        <p>
+            Maximum iterations: <input id="max_iters" type="number" min="1" max="100" step="1" value="100">
+            Computation strategy:
+            <select id="strategy">
+                <option value="threaded">Threaded Dynamic Block</option>
+                <option value="block">Dynamic Block</option>
+                <option value="naive">Naive</option>
             </select>
-	    Numerical percision:
-	    <select id="precision">
-		<option value="single">Single</option>
-		<option value="double">Double</option>
+            Numerical percision:
+            <select id="precision">
+                <option value="single">Single</option>
+                <option value="double">Double</option>
             </select>
-	</p>
-	<p>
-	    Random zeros:
-	    <button id="random_zeros_3">3</button>
-	    <button id="random_zeros_4">4</button>
-	    <button id="random_zeros_5">5</button>
-	    <button id="random_zeros_6">6</button>
-	    <button id="random_zeros_7">7</button>
-	    <button id="random_zeros_8">8</button>
-	    <button id="random_zeros_9">9</button>
-	    <button id="random_zeros_10">10</button>
-	</p>
-	<p><button id="random_colors">Randomize Colors</button></p>
-	<p id="fps">FPS: ???</p>
+        </p>
+        <p>
+            Random zeros:
+            <button id="random_zeros_3">3</button>
+            <button id="random_zeros_4">4</button>
+            <button id="random_zeros_5">5</button>
+            <button id="random_zeros_6">6</button>
+            <button id="random_zeros_7">7</button>
+            <button id="random_zeros_8">8</button>
+            <button id="random_zeros_9">9</button>
+            <button id="random_zeros_10">10</button>
+        </p>
+        <p><button id="random_colors">Randomize Colors</button></p>
+        <p id="fps">FPS: ???</p>
     </body>
 </html>
