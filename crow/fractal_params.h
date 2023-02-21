@@ -42,12 +42,17 @@ bool ToInt(const char* c_str,
 
 bool ParsePositiveInt(const crow::query_string& url_params,
 		      const std::string& key,
-		      int* output) {
+		      size_t* output) {
   const char* value = url_params.get(key);
   if (value == nullptr) {
     return false;
   }
-  return ToInt(value, output, /*min_value=*/1);
+  int int_value;
+  if (!ToInt(value, &int_value, /*min_value=*/1)) {
+    return false;
+  }
+  *output = static_cast<size_t>(int_value);
+  return true;
 }
 
 bool ToFiniteDouble(const char* c_str, double* output) {
@@ -160,9 +165,9 @@ struct FractalParams {
   double i_max;
   double r_min;
   double r_max;
-  int width;
-  int height;
-  int max_iters;
+  size_t width;
+  size_t height;
+  size_t max_iters;
   std::vector<ComplexD> zeros;
   std::vector<png::rgb_pixel> colors;
 };

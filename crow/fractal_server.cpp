@@ -5,9 +5,11 @@
 #include <vector>
 #include <optional>
 #include <set>
+#include <mutex>
 
 #include <png++/png.hpp>
 #include <crow.h>
+#include <boost/version.hpp>
 
 #include "complex.h"
 #include "complex_array.h"
@@ -15,6 +17,9 @@
 #include "analyzed_polynomial.h"
 #include "development_utils.h"
 #include "fractal_params.h"
+#include "thread_pool.h"
+
+using RGBImage = png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>>;
 
 crow::query_string GetBodyParams(const crow::request& req) {
   std::string fake_url = "?" + req.body;
@@ -55,8 +60,7 @@ template <typename T>
 std::string DrawToPng(const FractalParams& params) {
   size_t total_iters = 0;
 
-  png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>>
-    image(params.width, params.height);
+  RGBImage image(params.width, params.height);
   const AnalyzedPolynomial<T> p = AnalyzedPolynomial<T>(DoubleTo<T>(params.zeros));
   std::cout << "Drawing: " << p << std::endl;
 
@@ -119,8 +123,7 @@ std::string BlockDrawToPng(const FractalParams& params) {
   // Ensure divisibility by block_dim.
   size_t width = params.width / N * N;
   size_t height = params.height / N * N;
-  png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>>
-    image(width, height);
+  RGBImage image(width, height);
   const AnalyzedPolynomialD p = AnalyzedPolynomialD(params.zeros);
   std::cout << "Drawing: " << p << std::endl;
 
@@ -163,17 +166,56 @@ struct PixelMetadata {
 template <typename T>
 class PixelIterator {
  public:
-  PixelIterator<T>(T r_min, T i_min, T r_delta, T i_delta, size_t width, size_t height)
-    : r_min(r_min), i_min(i_min), r_delta(r_delta), i_delta(i_delta), width(width),
-      r_curr(r_min), i_curr(i_min), x(0), y(height - 1) {};
+  struct Options {
+    T r_min;
+    T i_min;
+    T r_delta;
+    T i_delta;
+    size_t width;
+    size_t height;
+
+    // x is in range [x_min, x_max)
+    size_t x_min = 0;
+    size_t x_max = 0;
+
+    // y is in range [y_min, y_max)
+    int y_min = 0;
+    int y_max = 0;
+  };
+
+  static void FillMissing(Options& options) {
+    if (options.x_min == 0 && options.x_max == 0) {
+      options.x_max = options.width;
+    }
+    if (options.y_min == 0 && options.y_max == 0) {
+      options.y_max = options.height;
+    }
+  }
+
+  PixelIterator<T>(const Options& options_in)
+    : options(options_in), r_curr(options.r_min), i_curr(options.i_min),
+      x(0), y(options.height - 1) {
+    FillMissing(options);
+
+    // Position x at x_min.
+    for (; x < options.x_min; ++x) {
+      r_curr += options.r_delta;
+    }
+    r_start = r_curr;
+
+    // Position y at y_max - 1.
+    for (; y >= options.y_max; --y) {
+      i_curr += options.i_delta;
+    }
+  };
 
   bool Done() const {
-    return y < 0;
+    return y < options.y_min;
   }
 
   std::tuple<T, T, std::optional<PixelMetadata>> Next() {
     // Check if we're done.
-    if (y < 0) {
+    if (y < options.y_min) {
       return std::make_tuple(T(0.0), T(0.0), std::nullopt);
     }
 
@@ -186,23 +228,22 @@ class PixelIterator {
 
     // Increment.
     ++x;
-    r_curr += r_delta;
-    if (x >= width) {
-      x = 0;
-      r_curr = r_min;
+    r_curr += options.r_delta;
+    if (x >= options.x_max) {
+      x = options.x_min;
+      r_curr = r_start;
       --y;
-      i_curr += i_delta;
+      i_curr += options.i_delta;
     }
 
     return result;
   }
 
   // Initialization parameters.
-  T r_min;
-  T i_min;
-  T r_delta;
-  T i_delta;
-  size_t width;
+  Options options;
+
+  // Where to reset r to each time we go to the next row.
+  T r_start;
 
   // Current iteration state.
   T r_curr;
@@ -237,20 +278,23 @@ std::optional<size_t> GetNewtonResult(const Complex<T>& z,
 }
 
 template <typename T, size_t N>
-std::string DynamicBlockDrawToPng(const FractalParams& params) {
+size_t FillImageUsingDynamicBlocks(const FractalParams& params,
+				   const AnalyzedPolynomial<T>& p,
+				   int y_min, int y_max,
+				   RGBImage& image) {
   size_t total_iters = 0;
 
-  png::image<png::rgb_pixel, png::solid_pixel_buffer<png::rgb_pixel>>
-    image(params.width, params.height);
-  const AnalyzedPolynomial<T> p = AnalyzedPolynomial<T>(DoubleTo<T>(params.zeros));
-  std::cout << "Drawing: " << p << std::endl;
-
-  // Make an iterator that will walk across our image.
-  const T i_delta = (params.i_max - params.i_min) / params.height;
-  const T r_delta = (params.r_max - params.r_min) / params.width;
-  PixelIterator<T> iter(params.r_min, params.i_min,
-			r_delta, i_delta,
-			params.width, params.height);
+  // Make an iterator that will walk across the requested rows of our image.
+  PixelIterator<T> iter({
+      .r_min = static_cast<T>(params.r_min),
+      .i_min = static_cast<T>(params.i_min),
+      .r_delta = static_cast<T>((params.r_max - params.r_min) / params.width),
+      .i_delta = static_cast<T>((params.i_max - params.i_min) / params.height),
+      .width = params.width,
+      .height = params.height,
+      .y_min = y_min,
+      .y_max = y_max,
+    });
 
   // Fill a block with some complex numbers.
   ComplexArray<T, N> block;
@@ -274,13 +318,60 @@ std::string DynamicBlockDrawToPng(const FractalParams& params) {
     }
   }
 
+  return total_iters;
+}
+
+template <typename T, size_t N>
+std::string DynamicBlockDrawToPng(const FractalParams& params) {
+  RGBImage image(params.width, params.height);
+  const AnalyzedPolynomial<T> p = AnalyzedPolynomial<T>(DoubleTo<T>(params.zeros));
+  std::cout << "Drawing: " << p << std::endl;
+
+  // Actually fill the image.
+  const size_t total_iters =
+    FillImageUsingDynamicBlocks<T, N>(params, p, /*y_min=*/0, /*y_max=*/params.height, image);
+
   std::cout << "Total iterations with dynamic block algo: " << total_iters << std::endl;
   std::ostringstream png_sstrm;
   image.write_stream(png_sstrm);
   return png_sstrm.str();
 }
 
+template <typename T, size_t N>
+std::string ThreadedDrawToPng(const FractalParams& params, ThreadPool& thread_pool) {
+  RGBImage image(params.width, params.height);
+  const AnalyzedPolynomial<T> p = AnalyzedPolynomial<T>(DoubleTo<T>(params.zeros));
+  std::cout << "Drawing: " << p << std::endl;
+
+  constexpr size_t rows_per_task = 48;
+  std::mutex m;
+  size_t total_iters = 0;
+  for (size_t start_row = 0; start_row < params.height; start_row += rows_per_task) {
+    const size_t end_row = std::min(start_row + rows_per_task, params.height);
+    thread_pool.Queue([start_row, end_row, params, p,
+		       &image, &total_iters, &m]() {
+      size_t iters = FillImageUsingDynamicBlocks<T, N>(params, p, start_row, end_row, image);
+      std::scoped_lock lock(m);
+      total_iters += iters;
+    });
+  }
+  thread_pool.WaitUntilDone();
+
+  std::cout << "Total iterations with threaded algo: " << total_iters << std::endl;
+  std::ostringstream png_sstrm;
+  image.write_stream(png_sstrm);
+  return png_sstrm.str();
+}
+
 int main() {
+  std::cout << "Using Boost "
+	    << BOOST_VERSION / 100000     << "."  // major version
+	    << BOOST_VERSION / 100 % 1000 << "."  // minor version
+	    << BOOST_VERSION % 100                // patch level
+	    << std::endl;
+
+  ThreadPool worker_pool(4);
+
   crow::SimpleApp app; //define your crow application
 
   // Main page.
@@ -352,6 +443,32 @@ int main() {
 	return crow::response(400);
       } else {
 	return crow::response("png", DynamicBlockDrawToPng<float, 32>(*fractal_params));
+      }
+    });
+  CROW_ROUTE(app, "/fractal_threaded").methods(crow::HTTPMethod::POST)
+    ([&](const crow::request& req){
+      const auto params = GetBodyParams(req);
+      std::cout << "Got the following params in request:" << std::endl;
+      std::cout << ParamsToString(params);
+      std::optional<FractalParams> fractal_params = FractalParams::Parse(params);
+      if (!fractal_params.has_value()) {
+	std::cout << "Malformed params :(" << std::endl;
+	return crow::response(400);
+      } else {
+	return crow::response("png", ThreadedDrawToPng<double, 32>(*fractal_params, worker_pool));
+      }
+    });
+  CROW_ROUTE(app, "/fractal_threaded_float").methods(crow::HTTPMethod::POST)
+    ([&](const crow::request& req){
+      const auto params = GetBodyParams(req);
+      std::cout << "Got the following params in request:" << std::endl;
+      std::cout << ParamsToString(params);
+      std::optional<FractalParams> fractal_params = FractalParams::Parse(params);
+      if (!fractal_params.has_value()) {
+	std::cout << "Malformed params :(" << std::endl;
+	return crow::response(400);
+      } else {
+	return crow::response("png", ThreadedDrawToPng<float, 32>(*fractal_params, worker_pool));
       }
     });
 
