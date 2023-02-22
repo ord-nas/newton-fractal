@@ -234,6 +234,10 @@ size_t FillImageUsingDynamicBlocks(const FractalParams& params,
   // Keep iterating Newton's algorithm on the block, pulling in new pixels as
   // old ones finish, until there are no pixels left.
   while (!iter.Done() || HasActivePixels(metadata)) {
+    // Uncomment to see what CPU we're on.
+    // if (total_iters % (N * 16384) == 0) {
+    //   std::cout << "[" << y_min << ", " << y_max << "): " << sched_getcpu() << std::endl;
+    // }
     NewtonIter(p, &block);
     total_iters += N;
     for (size_t b = 0; b < N; ++b) {
@@ -256,7 +260,7 @@ size_t DynamicBlockDraw(const FractalParams& params, const AnalyzedPolynomial<T>
 
 template <typename T, size_t N>
 size_t DynamicBlockThreadedDraw(const FractalParams& params, const AnalyzedPolynomial<T>& p, RGBImage& image, ThreadPool& thread_pool) {
-  constexpr size_t rows_per_task = 300; //48;
+  constexpr size_t rows_per_task = 50; //48;
   std::mutex m;
   size_t total_iters = 0;
   for (size_t start_row = 0; start_row < params.height; start_row += rows_per_task) {
@@ -317,7 +321,7 @@ std::string GeneratePng(const FractalParams& params, ThreadPool& thread_pool) {
   }
   const uint64_t end_time = Now();
   std::cout << "Total iterations: " << total_iters << std::endl;
-  std::cout << "Total computation time (ms): " << (end_time - start_time) << std::endl;
+  std::cout << "Computation time (ms): " << (end_time - start_time) << std::endl;
 
   // Dispatch PNG encoding.
   std::string png;
@@ -330,7 +334,8 @@ std::string GeneratePng(const FractalParams& params, ThreadPool& thread_pool) {
      break;
   }
   const uint64_t encode_time = Now();
-  std::cout << "Total PNG encode time (ms): " << (encode_time - end_time) << std::endl;
+  std::cout << "PNG encode time (ms): " << (encode_time - end_time) << std::endl;
+  std::cout << "Total time (ms): " << (encode_time - start_time) << std::endl;
   return png;
 }
 
@@ -343,7 +348,10 @@ int main() {
 
   fpng::fpng_init();
 
-  ThreadPool worker_pool(4);
+  // Using 8 threads (since we have 8 logical CPUs) even though there are only 4
+  // physical cores. Experiments seem to show that 8 is slightly faster
+  // (although not 2x faster) than 4.
+  ThreadPool worker_pool(8);
 
   crow::SimpleApp app; //define your crow application
 
