@@ -55,28 +55,6 @@
              };
          }
 
-         function get_selected_fractal_endpoint() {
-             var strategy = document.getElementById("strategy").value;
-             var precision = document.getElementById("precision").value;
-             var endpoint;
-             switch (strategy) {
-                 case 'naive':
-                     endpoint = "fractal";
-                     break;
-                 case 'block':
-                     endpoint = "fractal_dynamic_block";
-                     break;
-                 case 'threaded':
-                 default:
-                     endpoint = "fractal_threaded";
-                     break;
-             }
-             if (precision === "single") {
-                 endpoint += "_float";
-             }
-             return endpoint;
-         }
-
          class FractalRequester {
              constructor(image, width, height) {
                  this.image = image;
@@ -121,6 +99,10 @@
                          param_array.push([key, value]);
                      }
                  }
+                 // Dump in other UI options.
+                 param_array.push(["strategy", document.getElementById("strategy").value]);
+                 param_array.push(["precision", document.getElementById("precision").value]);
+                 param_array.push(["png_encoder", document.getElementById("png_encoder").value]);
                  return new URLSearchParams(param_array);
              }
 
@@ -138,7 +120,7 @@
                  // Schedule a new request!
                  Object.assign(this.last_request_params, this.current_params);
                  console.log("Requesting", this.current_params);
-                 this.pending_request = fetch(get_selected_fractal_endpoint(), {
+                 this.pending_request = fetch("fractal", {
                      method: 'POST',
                      headers: {
                          'Content-Type': 'application/x-www-form-urlencoded'
@@ -355,6 +337,26 @@
          function main() {
              const overlay = document.getElementById("overlay");
              const image = document.getElementById("fractal");
+             // A square.
+             /* var initial_zeros = [
+              *     {r: 1, i: 1, red: 255, green: 0, blue: 0},
+              *     {r: 1, i: -1, red: 255, green: 255, blue: 0},
+              *     {r: -1, i: -1, red: 0, green: 255, blue: 0},
+              *     {r: -1, i: 1, red: 0, green: 0, blue: 0},
+              * ];*/
+             // Tenth roots of unity (all set to the same color, need to press randomize color in UI).
+             /* var initial_zeros = [
+              *     {r: 1, i: 0, red: 255, green: 255, blue: 255},
+              *     {r: 0.809016994374947, i: 0.587785252292473, red: 255, green: 255, blue: 255},
+              *     {r: 0.309016994374947, i: 0.951056516295154, red: 255, green: 255, blue: 255},
+              *     {r: -0.309016994374947, i: 0.951056516295154, red: 255, green: 255, blue: 255},
+              *     {r: -0.809016994374947, i: 0.587785252292473, red: 255, green: 255, blue: 255},
+              *     {r: -1, i: 0, red: 255, green: 255, blue: 255},
+              *     {r: -0.809016994374947, i: -0.587785252292473, red: 255, green: 255, blue: 255},
+              *     {r: -0.309016994374947, i: -0.951056516295154, red: 255, green: 255, blue: 255},
+              *     {r: 0.309016994374947, i: -0.951056516295154, red: 255, green: 255, blue: 255},
+              *     {r: 0.809016994374947, i: -0.587785252292473, red: 255, green: 255, blue: 255},
+              * ];*/
              var initial_zeros = [
                  {r: 1.0, i: 0.0, red: 255, green: 0, blue: 0},
                  {r: -0.5, i: 0.86602540378, red: 0, green: 255, blue: 0},
@@ -395,27 +397,33 @@
              tracker.run_callbacks();
          }
 
-         addEventListener("load", (event) => {main();});
+         addEventListener("load", (event) => main());
         </script>
     </head>
     <body>
         <div id="viewport">
             <!-- <canvas id="overlay" width="2500px" height="1300px" style="z-index:2"></canvas> -->
-            <canvas id="overlay" width="1280px" height="720px" style="z-index:2"></canvas>
+            <canvas id="overlay" width="2000px" height="1200px" style="z-index:2"></canvas>
+            <!-- <canvas id="overlay" width="1280px" height="720px" style="z-index:2"></canvas> -->
             <img id="fractal" src="static/hourglass.png" style="z-index:1"/>
         </div>
         <p>
             Maximum iterations: <input id="max_iters" type="number" min="1" max="100" step="1" value="100">
             Computation strategy:
             <select id="strategy">
-                <option value="threaded">Threaded Dynamic Block</option>
-                <option value="block">Dynamic Block</option>
-                <option value="naive">Naive</option>
+                <option value="DYNAMIC_BLOCK_THREADED">Threaded Dynamic Block</option>
+                <option value="DYNAMIC_BLOCK">Dynamic Block</option>
+                <option value="NAIVE">Naive</option>
             </select>
             Numerical percision:
             <select id="precision">
-                <option value="single">Single</option>
-                <option value="double">Double</option>
+                <option value="SINGLE">Single</option>
+                <option value="DOUBLE">Double</option>
+            </select>
+            PNG Encoder:
+            <select id="png_encoder">
+                <option value="PNGPP">PNG++ (via libpng)</option>
+                <option value="FPNG">FPNG</option>
             </select>
         </p>
         <p>

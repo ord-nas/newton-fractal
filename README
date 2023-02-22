@@ -45,6 +45,7 @@ Then also install some dependencies.
   * Extract the archived, it should be a single directory eigen-3.4.0
   * The source code is in eigen-3.4.0/Eigen
   * Copy that into /usr/include: sudo cp -r ~/Downloads/eigen-3.4.0/Eigen/ /usr/include/
+* FPNG is actually directly included in this repository, two source files originally copied from: https://github.com/richgel999/fpng
 
 ## Compile
 

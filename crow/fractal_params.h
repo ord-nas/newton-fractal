@@ -9,6 +9,22 @@
 
 #include "complex.h"
 
+enum class Precision {
+  SINGLE,
+  DOUBLE,
+};
+
+enum class Strategy {
+  NAIVE,
+  DYNAMIC_BLOCK,
+  DYNAMIC_BLOCK_THREADED,
+};
+
+enum class PngEncoder {
+  PNGPP,
+  FPNG,
+};
+
 bool ToInt(const char* c_str,
 	   int* output,
 	   std::optional<int> min_value = std::nullopt,
@@ -143,24 +159,90 @@ bool ParseColorList(const crow::query_string& url_params,
   return true;
 }
 
+bool ParsePrecision(const crow::query_string& url_params,
+		    const std::string& key,
+		    std::optional<Precision>* output) {
+  const char* c_str = url_params.get(key);
+  if (c_str == nullptr) {
+    return false;
+  }
+  const std::string s(c_str);
+  if (s == "SINGLE") {
+    *output = Precision::SINGLE;
+    return true;
+  } else if (s == "DOUBLE") {
+    *output = Precision::DOUBLE;
+    return true;
+  }
+  return false;
+}
+
+bool ParseStrategy(const crow::query_string& url_params,
+		   const std::string& key,
+		   std::optional<Strategy>* output) {
+  const char* c_str = url_params.get(key);
+  if (c_str == nullptr) {
+    return false;
+  }
+  const std::string s(c_str);
+  if (s == "NAIVE") {
+    *output = Strategy::NAIVE;
+    return true;
+  } else if (s == "DYNAMIC_BLOCK") {
+    *output = Strategy::DYNAMIC_BLOCK;
+    return true;
+  } else if (s == "DYNAMIC_BLOCK_THREADED") {
+    *output = Strategy::DYNAMIC_BLOCK_THREADED;
+    return true;
+  }
+  return false;
+}
+
+bool ParsePngEncoder(const crow::query_string& url_params,
+		     const std::string& key,
+		     std::optional<PngEncoder>* output) {
+  const char* c_str = url_params.get(key);
+  if (c_str == nullptr) {
+    return false;
+  }
+  const std::string s(c_str);
+  if (s == "PNGPP") {
+    *output = PngEncoder::PNGPP;
+    return true;
+  } else if (s == "FPNG") {
+    *output = PngEncoder::FPNG;
+    return true;
+  }
+  return false;
+}
+
 struct FractalParams {
   static std::optional<FractalParams> Parse(const crow::query_string& url_params) {
     FractalParams fractal_params;
-    if (ParseFiniteDouble(url_params, "i_min", &fractal_params.i_min) &&
-	ParseFiniteDouble(url_params, "i_max", &fractal_params.i_max) &&
-	ParseFiniteDouble(url_params, "r_min", &fractal_params.r_min) &&
-	ParseFiniteDouble(url_params, "r_max", &fractal_params.r_max) &&
-	ParsePositiveInt(url_params, "width", &fractal_params.width) &&
-	ParsePositiveInt(url_params, "height", &fractal_params.height) &&
-	ParsePositiveInt(url_params, "max_iters", &fractal_params.max_iters) &&
-	ParseComplexList(url_params, "zero_rs", "zero_is", &fractal_params.zeros) &&
-	ParseColorList(url_params, "zero_reds", "zero_greens", "zero_blues", &fractal_params.colors) &&
-	fractal_params.zeros.size() == fractal_params.colors.size()) {
-      return fractal_params;
+
+    // Required params.
+    if (!ParseFiniteDouble(url_params, "i_min", &fractal_params.i_min) ||
+	!ParseFiniteDouble(url_params, "i_max", &fractal_params.i_max) ||
+	!ParseFiniteDouble(url_params, "r_min", &fractal_params.r_min) ||
+	!ParseFiniteDouble(url_params, "r_max", &fractal_params.r_max) ||
+	!ParsePositiveInt(url_params, "width", &fractal_params.width) ||
+	!ParsePositiveInt(url_params, "height", &fractal_params.height) ||
+	!ParsePositiveInt(url_params, "max_iters", &fractal_params.max_iters) ||
+	!ParseComplexList(url_params, "zero_rs", "zero_is", &fractal_params.zeros) ||
+	!ParseColorList(url_params, "zero_reds", "zero_greens", "zero_blues", &fractal_params.colors) ||
+	fractal_params.zeros.size() != fractal_params.colors.size()) {
+      return std::nullopt;
     }
-    return std::nullopt;
+
+    // Optional params.
+    ParsePrecision(url_params, "precision", &fractal_params.precision);
+    ParseStrategy(url_params, "strategy", &fractal_params.strategy);
+    ParsePngEncoder(url_params, "png_encoder", &fractal_params.png_encoder);
+
+    return fractal_params;
   }
 
+  // Required args.
   double i_min;
   double i_max;
   double r_min;
@@ -170,6 +252,11 @@ struct FractalParams {
   size_t max_iters;
   std::vector<ComplexD> zeros;
   std::vector<png::rgb_pixel> colors;
+
+  // Optional args.
+  std::optional<Precision> precision;
+  std::optional<Strategy> strategy;
+  std::optional<PngEncoder> png_encoder;
 };
 
 #endif // _CROW_FRACTAL_SERVER_FRACTAL_PARAMS_
