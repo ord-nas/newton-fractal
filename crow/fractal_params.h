@@ -18,6 +18,7 @@ enum class Strategy {
   NAIVE,
   DYNAMIC_BLOCK,
   DYNAMIC_BLOCK_THREADED,
+  DYNAMIC_BLOCK_THREADED_INCREMENTAL,
 };
 
 enum class PngEncoder {
@@ -194,6 +195,9 @@ bool ParseStrategy(const crow::query_string& url_params,
   } else if (s == "DYNAMIC_BLOCK_THREADED") {
     *output = Strategy::DYNAMIC_BLOCK_THREADED;
     return true;
+  } else if (s == "DYNAMIC_BLOCK_THREADED_INCREMENTAL") {
+    *output = Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL;
+    return true;
   }
   return false;
 }
@@ -222,9 +226,8 @@ struct FractalParams {
 
     // Required params.
     if (!ParseFiniteDouble(url_params, "i_min", &fractal_params.i_min) ||
-	!ParseFiniteDouble(url_params, "i_max", &fractal_params.i_max) ||
 	!ParseFiniteDouble(url_params, "r_min", &fractal_params.r_min) ||
-	!ParseFiniteDouble(url_params, "r_max", &fractal_params.r_max) ||
+	!ParseFiniteDouble(url_params, "r_range", &fractal_params.r_range) ||
 	!ParsePositiveInt(url_params, "width", &fractal_params.width) ||
 	!ParsePositiveInt(url_params, "height", &fractal_params.height) ||
 	!ParsePositiveInt(url_params, "max_iters", &fractal_params.max_iters) ||
@@ -244,9 +247,8 @@ struct FractalParams {
 
   // Required args.
   double i_min;
-  double i_max;
   double r_min;
-  double r_max;
+  double r_range;
   size_t width;
   size_t height;
   size_t max_iters;
@@ -258,5 +260,38 @@ struct FractalParams {
   std::optional<Strategy> strategy;
   std::optional<PngEncoder> png_encoder;
 };
+
+bool operator==(const png::rgb_pixel& a,
+		const png::rgb_pixel& b) {
+  return (a.red == b.red && a.green == b.green && a.blue == b.blue);
+}
+
+bool operator!=(const png::rgb_pixel& a,
+		const png::rgb_pixel& b) {
+  return !(a == b);
+}
+
+template <typename T>
+bool AllEqual(const std::vector<T>& a, const std::vector<T>& b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (a[i] != b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ParamsDifferOnlyByPanning(const FractalParams& a, const FractalParams& b) {
+  return (a.r_range == b.r_range &&
+	  a.width == b.width &&
+	  a.height == b.height &&
+	  a.max_iters == b.max_iters &&
+	  AllEqual(a.zeros, b.zeros) &&
+	  AllEqual(a.colors, b.colors) &&
+	  a.precision == b.precision);
+}
 
 #endif // _CROW_FRACTAL_SERVER_FRACTAL_PARAMS_

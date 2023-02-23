@@ -78,6 +78,16 @@ class Complex {
 };
 
 template <typename T>
+bool operator==(const Complex<T>& a, const Complex<T>& b) {
+  return a.r == b.r && a.i == b.i;
+}
+
+template <typename T>
+bool operator!=(const Complex<T>& a, const Complex<T>& b) {
+  return !(a == b);
+}
+
+template <typename T>
 Complex<T> operator+(const Complex<T>& a, const Complex<T>& b) {
   return Complex<T>(a.r + b.r, a.i + b.i);
 }

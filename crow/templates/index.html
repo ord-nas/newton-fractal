@@ -70,9 +70,8 @@
              view_state_changed(new_state) {
                  // Pull out viewport params.
                  this.current_params.i_min = new_state.viewport.i_min;
-                 this.current_params.i_max = new_state.viewport.i_max;
                  this.current_params.r_min = new_state.viewport.r_min;
-                 this.current_params.r_max = new_state.viewport.r_max;
+                 this.current_params.r_range = new_state.viewport.r_range;
 
                  // Pull out zero params.
                  this.current_params.zero_rs = new_state.zeros.map((z) => z.r);
@@ -127,13 +126,18 @@
                      },
                      body: this.get_url_params(),
                  })
-                     .then((response) => response.blob())
+                     .then((response) => {
+                         console.log("1: " + Date.now());
+                         return response.blob();
+                     })
                      .then((blob) => {
+                         console.log("2: " + Date.now());
                          const objectURL = URL.createObjectURL(blob);
                          var old_url = this.image.src;
                          this.image.src = objectURL;
                          URL.revokeObjectURL(old_url);
                          this.pending_request = null;
+                         console.log("3: " + Date.now());
                          this.maybe_request();
                          compute_fps();
                      });
@@ -150,7 +154,7 @@
                  this.ctx = canvas.getContext("2d");
                  this.origin_i = 2.5 / canvas.width * canvas.height;
                  this.origin_r = -2.5;
-                 this.range_r = 5.0;
+                 this.r_range = 5.0;
                  // Last position of the mouse on this element, in pixels.
                  // Only set when we're in a mouse drag event.
                  this.last_pixels = null;
@@ -213,15 +217,15 @@
              get_complex(event) {
                  var pixels = this.get_pixels(event);
                  return {
-                     r: this.origin_r + (pixels.x / this.canvas.width * this.range_r),
-                     i: this.origin_i - (pixels.y / this.canvas.width * this.range_r),
+                     r: this.origin_r + (pixels.x / this.canvas.width * this.r_range),
+                     i: this.origin_i - (pixels.y / this.canvas.width * this.r_range),
                  };
              }
 
              complex_to_pixels(r, i) {
                  return {
-                     x: (r - this.origin_r) / this.range_r * this.canvas.width,
-                     y: (this.origin_i - i) / this.range_r * this.canvas.width,
+                     x: (r - this.origin_r) / this.r_range * this.canvas.width,
+                     y: (this.origin_i - i) / this.r_range * this.canvas.width,
                  };
              }
 
@@ -229,10 +233,9 @@
                  return {
                      zeros: this.zeros,
                      viewport: {
-                         i_min: this.origin_i - this.range_r / this.canvas.width * this.canvas.height,
-                         i_max: this.origin_i,
+                         i_min: this.origin_i - this.r_range / this.canvas.width * this.canvas.height,
                          r_min: this.origin_r,
-                         r_max: this.origin_r + this.range_r,
+                         r_range: this.r_range,
                      }
                  };
              }
@@ -272,8 +275,8 @@
 
                  if (this.last_pixels !== null) {
                      var current_pixels = this.get_pixels(event);
-                     this.origin_r -= (current_pixels.x - this.last_pixels.x) / this.canvas.width * this.range_r;
-                     this.origin_i += (current_pixels.y - this.last_pixels.y) / this.canvas.width * this.range_r;
+                     this.origin_r -= (current_pixels.x - this.last_pixels.x) / this.canvas.width * this.r_range;
+                     this.origin_i += (current_pixels.y - this.last_pixels.y) / this.canvas.width * this.r_range;
                      this.last_pixels = current_pixels;
                  } else {
                      Object.assign(this.zeros[this.zero_index], this.get_complex(event));
@@ -294,11 +297,11 @@
                  var complex = this.get_complex(event);
 
                  // Adjust the new range based on the scale.
-                 this.range_r *= scale_amount;
+                 this.r_range *= scale_amount;
 
                  // Figure out how to adjust the origin so that the same point stays under the mouse.
-                 this.origin_r = complex.r - pixels.x / this.canvas.width * this.range_r;
-                 this.origin_i = complex.i + pixels.y / this.canvas.width * this.range_r;
+                 this.origin_r = complex.r - pixels.x / this.canvas.width * this.r_range;
+                 this.origin_i = complex.i + pixels.y / this.canvas.width * this.r_range;
 
                  this.draw();
                  this.run_callbacks();
@@ -411,8 +414,9 @@
             Maximum iterations: <input id="max_iters" type="number" min="1" max="100" step="1" value="100">
             Computation strategy:
             <select id="strategy">
-                <option value="DYNAMIC_BLOCK_THREADED">Threaded Dynamic Block</option>
-                <option value="DYNAMIC_BLOCK">Dynamic Block</option>
+                <option value="DYNAMIC_BLOCK_THREADED_INCREMENTAL">Vectorized & Multi-Threaded & Incremental</option>
+                <option value="DYNAMIC_BLOCK_THREADED">Vectorized & Multi-Threaded</option>
+                <option value="DYNAMIC_BLOCK">Vectorized</option>
                 <option value="NAIVE">Naive</option>
             </select>
             Numerical percision:

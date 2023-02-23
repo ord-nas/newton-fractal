@@ -67,8 +67,8 @@ std::vector<Complex<T>> DoubleTo(const std::vector<ComplexD>& input) {
 template <typename T>
 size_t NaiveDraw(const FractalParams& params, const AnalyzedPolynomial<T>& p, RGBImage& image) {
   size_t total_iters = 0;
-  const T i_delta = (params.i_max - params.i_min) / params.height;
-  const T r_delta = (params.r_max - params.r_min) / params.width;
+  const T i_delta = params.r_range / params.width;
+  const T r_delta = params.r_range / params.width;
   T i = params.i_min;
   for (int y = params.height - 1; y >= 0; --y) {
     T r = params.r_min;
@@ -205,10 +205,46 @@ std::optional<size_t> GetNewtonResult(const Complex<T>& z,
   return p.GetZeroIndexIfConverged(z);
 }
 
+struct ImageRect {
+  // Both ranges are half-open, e.g. [x_min, x_max).
+  size_t x_min;
+  size_t x_max;
+  size_t y_min;
+  size_t y_max;
+
+  size_t width() const {
+    return x_max - x_min;
+  }
+
+  size_t height() const {
+    return y_max - y_min;
+  }
+
+  size_t CountPixels() const {
+    return (x_max - x_min) * (y_max - y_min);
+  }
+};
+
+struct ImageOverlap {
+  ImageRect a_region;
+  ImageRect b_region;
+};
+
+struct RangeOverlap {
+  size_t a_min;
+  size_t b_min;
+  size_t extent;
+};
+
+struct ImageDelta {
+  std::optional<ImageOverlap> overlap;
+  std::vector<ImageRect> b_only;
+};
+
 template <typename T, size_t N>
 size_t FillImageUsingDynamicBlocks(const FractalParams& params,
 				   const AnalyzedPolynomial<T>& p,
-				   int y_min, int y_max,
+				   const ImageRect rect,
 				   RGBImage& image) {
   size_t total_iters = 0;
 
@@ -216,12 +252,14 @@ size_t FillImageUsingDynamicBlocks(const FractalParams& params,
   PixelIterator<T> iter({
       .r_min = static_cast<T>(params.r_min),
       .i_min = static_cast<T>(params.i_min),
-      .r_delta = static_cast<T>((params.r_max - params.r_min) / params.width),
-      .i_delta = static_cast<T>((params.i_max - params.i_min) / params.height),
+      .r_delta = static_cast<T>(params.r_range / params.width),
+      .i_delta = static_cast<T>(params.r_range / params.width),
       .width = params.width,
       .height = params.height,
-      .y_min = y_min,
-      .y_max = y_max,
+      .x_min = rect.x_min,
+      .x_max = rect.x_max,
+      .y_min = static_cast<int>(rect.y_min),
+      .y_max = static_cast<int>(rect.y_max),
     });
 
   // Fill a block with some complex numbers.
@@ -255,7 +293,13 @@ size_t FillImageUsingDynamicBlocks(const FractalParams& params,
 
 template <typename T, size_t N>
 size_t DynamicBlockDraw(const FractalParams& params, const AnalyzedPolynomial<T>& p, RGBImage& image) {
-  return FillImageUsingDynamicBlocks<T, N>(params, p, /*y_min=*/0, /*y_max=*/params.height, image);
+  const ImageRect whole_image = {
+    .x_min = 0,
+    .x_max = params.width,
+    .y_min = 0,
+    .y_max = params.height,
+  };
+  return FillImageUsingDynamicBlocks<T, N>(params, p, whole_image, image);
 }
 
 template <typename T, size_t N>
@@ -265,19 +309,233 @@ size_t DynamicBlockThreadedDraw(const FractalParams& params, const AnalyzedPolyn
   size_t total_iters = 0;
   for (size_t start_row = 0; start_row < params.height; start_row += rows_per_task) {
     const size_t end_row = std::min(start_row + rows_per_task, params.height);
-    thread_pool.Queue([start_row, end_row, params, p,
+    const ImageRect rect = {
+      .x_min = 0,
+      .x_max = params.width,
+      .y_min = start_row,
+      .y_max = end_row,
+    };
+    thread_pool.Queue([rect, params, p,
 		       &image, &total_iters, &m]() {
-      {
-	std::scoped_lock lock(m);
-	std::cout << Now() << ": Starting to work on [" << start_row << ", " << end_row << ")" << std::endl;
-      }
-      size_t iters = FillImageUsingDynamicBlocks<T, N>(params, p, start_row, end_row, image);
+      size_t iters = FillImageUsingDynamicBlocks<T, N>(params, p, rect, image);
       {
 	std::scoped_lock lock(m);
 	total_iters += iters;
-	std::cout << Now() << ": Done [" << start_row << ", " << end_row << ")" << std::endl;
       }
     });
+  }
+  thread_pool.WaitUntilDone();
+  return total_iters;
+}
+
+template <typename T>
+std::optional<RangeOverlap> FindRangeOverlap(T a_min, T b_min, T step, size_t num_pixels) {
+  const T start = std::min(a_min, b_min);
+  const T end = std::max(a_min, b_min);
+
+  size_t offset = 0;
+  T curr = start;
+  T prev = start;
+  while (offset < num_pixels && curr < end) {
+    ++offset;
+    prev = curr;
+    curr += step;
+  }
+  if (offset > 0 && std::abs(end - prev) < std::abs(end - curr)) {
+    --offset;
+  }
+  if (offset == num_pixels) {
+    return std::nullopt;
+  }
+
+  if (a_min < b_min) {
+    return RangeOverlap{
+      .a_min = offset,
+      .b_min = 0,
+      .extent = (num_pixels - offset),
+    };
+  } else {
+    return RangeOverlap{
+      .a_min = 0,
+      .b_min = offset,
+      .extent = (num_pixels - offset),
+    };
+  }
+}
+
+template <typename T>
+std::optional<ImageOverlap> FindImageOverlap(const FractalParams& a, const FractalParams& b) {
+  const size_t width = a.width;
+  const size_t height = a.height;
+  const T step = a.r_range / width;
+
+  std::optional<RangeOverlap> r_overlap = FindRangeOverlap<T>(a.r_min, b.r_min, step, width);
+  std::optional<RangeOverlap> i_overlap = FindRangeOverlap<T>(a.i_min, b.i_min, step, height);
+  if (!r_overlap.has_value() || !i_overlap.has_value()) {
+    return std::nullopt;
+  }
+
+  ImageOverlap image_overlap;
+
+  // The r/x part is pretty easy.
+  image_overlap.a_region.x_min = r_overlap->a_min;
+  image_overlap.a_region.x_max = r_overlap->a_min + r_overlap->extent;
+  image_overlap.b_region.x_min = r_overlap->b_min;
+  image_overlap.b_region.x_max = r_overlap->b_min + r_overlap->extent;
+
+  // The i/y part is a little more subtle because the coordinate systems run in
+  // opposite directions.
+  image_overlap.a_region.y_max = height - i_overlap->a_min;
+  image_overlap.a_region.y_min = height - i_overlap->a_min - i_overlap->extent;
+  image_overlap.b_region.y_max = height - i_overlap->b_min;
+  image_overlap.b_region.y_min = height - i_overlap->b_min - i_overlap->extent;
+
+  return image_overlap;
+}
+
+template <typename T>
+ImageDelta ComputeImageDelta(const FractalParams& a, const FractalParams& b) {
+  // To try to mitigate floating point math issues, we use the exact set of
+  // operations that the drawing function will do. This makes things a little
+  // less efficient.
+  ImageDelta delta;
+  delta.overlap = FindImageOverlap<T>(a, b);
+
+  // If there is no overlap, then the whole image is b_only.
+  if (!delta.overlap.has_value()) {
+    delta.b_only.push_back({
+	.x_min = 0,
+	.x_max = b.width,
+	.y_min = 0,
+	.y_max = b.height,
+      });
+    return delta;
+  }
+
+  // Otherwise, compute the b_only portions.
+  const ImageRect b_overlap = delta.overlap->b_region;
+  if (b_overlap.x_min > 0) {
+    delta.b_only.push_back({
+	.x_min = 0,
+	.x_max = b_overlap.x_min,
+	.y_min = 0,
+	.y_max = b.height,
+      });
+  }
+  if (b_overlap.x_max < b.width) {
+    delta.b_only.push_back({
+	.x_min = b_overlap.x_max,
+	.x_max = b.width,
+	.y_min = 0,
+	.y_max = b.height,
+      });
+  }
+  if (b_overlap.y_min > 0) {
+    delta.b_only.push_back({
+	.x_min = b_overlap.x_min,
+	.x_max = b_overlap.x_max,
+	.y_min = 0,
+	.y_max = b_overlap.y_min,
+      });
+  }
+  if (b_overlap.y_max < b.height) {
+    delta.b_only.push_back({
+	.x_min = b_overlap.x_min,
+	.x_max = b_overlap.x_max,
+	.y_min = b_overlap.y_max,
+	.y_max = b.height,
+      });
+  }
+  return delta;
+}
+
+// Can likely be optimized, but not clear if necessary.
+void CopyImage(const RGBImage& from, RGBImage& to, const ImageOverlap& overlap) {
+  const uint64_t start_time = Now();
+  size_t from_y = overlap.a_region.y_min;
+  size_t to_y = overlap.b_region.y_min;
+  for (; from_y < overlap.a_region.y_max; ++from_y, ++to_y) {
+    size_t from_x = overlap.a_region.x_min;
+    size_t to_x = overlap.b_region.x_min;
+    for (; from_x < overlap.a_region.x_max; ++from_x, ++to_x) {
+      to[to_y][to_x] = from[from_y][from_x];
+    }
+  }
+  const uint64_t end_time = Now();
+  std::cout << "Copy time (ms): " << (end_time - start_time) << std::endl;
+}
+
+template <typename T, size_t N>
+size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
+					   const AnalyzedPolynomial<T>& p,
+					   RGBImage& image,
+					   const FractalParams& previous_params,
+					   const RGBImage& previous_image,
+					   ThreadPool& thread_pool) {
+  if (!ParamsDifferOnlyByPanning(params, previous_params)) {
+    std::cout << "BAIL INCREMENTAL :(" << std::endl;
+    return DynamicBlockThreadedDraw<T, N>(params, p, image, thread_pool);
+  }
+  const ImageDelta delta = ComputeImageDelta<T>(previous_params, params);
+  std::cout << "A Params (OLD):" << std::endl;
+  std::cout << "  r_min:" << previous_params.r_min << std::endl;
+  std::cout << "  i_min:" << previous_params.i_min << std::endl;
+  std::cout << "  r_range:" << previous_params.r_range << std::endl;
+  std::cout << "B Params (NEW):" << std::endl;
+  std::cout << "  r_min:" << params.r_min << std::endl;
+  std::cout << "  i_min:" << params.i_min << std::endl;
+  std::cout << "  r_range:" << params.r_range << std::endl;
+  std::cout << "Overlap area:" << std::endl;
+  if (delta.overlap.has_value()) {
+    std::cout << "  A (Old):" << std::endl;
+    std::cout << "    x_min: " << delta.overlap->a_region.x_min << std::endl;
+    std::cout << "    x_max: " << delta.overlap->a_region.x_max << std::endl;
+    std::cout << "    y_min: " << delta.overlap->a_region.y_min << std::endl;
+    std::cout << "    y_may: " << delta.overlap->a_region.y_max << std::endl;
+    std::cout << "  B (New):" << std::endl;
+    std::cout << "    x_min: " << delta.overlap->b_region.x_min << std::endl;
+    std::cout << "    x_max: " << delta.overlap->b_region.x_max << std::endl;
+    std::cout << "    y_min: " << delta.overlap->b_region.y_min << std::endl;
+    std::cout << "    y_max: " << delta.overlap->b_region.y_max << std::endl;
+  } else {
+    std::cout << "  NONE" << std::endl;
+  }
+  for (const auto& only : delta.b_only) {
+    std::cout << "B only:" << std::endl;
+    std::cout << "  x_min: " << only.x_min << std::endl;
+    std::cout << "  x_max: " << only.x_max << std::endl;
+    std::cout << "  y_min: " << only.y_min << std::endl;
+    std::cout << "  y_max: " << only.y_max << std::endl;
+  }
+
+  constexpr size_t desired_pixels_per_task = 50 * 2000; // TUNE
+  std::mutex m;
+  size_t total_iters = 0;
+  if (delta.overlap.has_value()) {
+    thread_pool.Queue([&previous_image, &image,
+		       delta]() {
+      CopyImage(previous_image, image, *delta.overlap);
+    });
+  }
+  for (const auto& region : delta.b_only) {
+    const size_t rows_per_task = desired_pixels_per_task / region.width();
+    for (size_t start_row = region.y_min; start_row < region.y_max; start_row += rows_per_task) {
+      const size_t end_row = std::min(start_row + rows_per_task, region.y_max);
+      const ImageRect rect = {
+	.x_min = region.x_min,
+	.x_max = region.x_max,
+	.y_min = start_row,
+	.y_max = end_row,
+      };
+      thread_pool.Queue([rect, params, p,
+			 &image, &total_iters, &m]() {
+	size_t iters = FillImageUsingDynamicBlocks<T, N>(params, p, rect, image);
+	{
+	  std::scoped_lock lock(m);
+	  total_iters += iters;
+	}
+      });
+    }
   }
   thread_pool.WaitUntilDone();
   return total_iters;
@@ -298,25 +556,37 @@ std::string EncodeWithFPng(RGBImage& image) {
 
 template <typename T>
 std::string GeneratePng(const FractalParams& params, ThreadPool& thread_pool) {
+  // Gross. TODO FIXME
+  static std::optional<FractalParams> previous_params = std::nullopt;
+  static std::unique_ptr<RGBImage> previous_image = nullptr;
+
   // Set up the image.
-  RGBImage image(params.width, params.height);
+  auto image = std::make_unique<RGBImage>(params.width, params.height);
 
   // Figure out what polynomial we're drawing.
   const AnalyzedPolynomial<T> p = AnalyzedPolynomial<T>(DoubleTo<T>(params.zeros));
-  std::cout << "Drawing: " << p << std::endl;
+  std::cout << Now() << ": Drawing: " << p << std::endl;
 
   // Dispatch image generation.
   const uint64_t start_time = Now();
   size_t total_iters = 0;
   switch (params.strategy.value_or(Strategy::DYNAMIC_BLOCK_THREADED)) {
    case Strategy::NAIVE:
-     total_iters = NaiveDraw<T>(params, p, image);
+     total_iters = NaiveDraw<T>(params, p, *image);
      break;
    case Strategy::DYNAMIC_BLOCK:
-     total_iters = DynamicBlockDraw<T, 32>(params, p, image);
+     total_iters = DynamicBlockDraw<T, 32>(params, p, *image);
      break;
    case Strategy::DYNAMIC_BLOCK_THREADED:
-     total_iters = DynamicBlockThreadedDraw<T, 32>(params, p, image, thread_pool);
+     total_iters = DynamicBlockThreadedDraw<T, 32>(params, p, *image, thread_pool);
+     break;
+   case Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL:
+     if (!previous_params.has_value() || previous_image == nullptr) {
+       std::cout << "NO BASELINE FOR INCREMENTAL :(" << std::endl;
+       total_iters = DynamicBlockThreadedDraw<T, 32>(params, p, *image, thread_pool);
+     } else {
+       total_iters = DynamicBlockThreadedIncrementalDraw<T, 32>(params, p, *image, *previous_params, *previous_image, thread_pool);
+     }
      break;
   }
   const uint64_t end_time = Now();
@@ -327,15 +597,19 @@ std::string GeneratePng(const FractalParams& params, ThreadPool& thread_pool) {
   std::string png;
   switch (params.png_encoder.value_or(PngEncoder::FPNG)) {
    case PngEncoder::PNGPP:
-     png = EncodeWithPngPlusPlus(image);
+     png = EncodeWithPngPlusPlus(*image);
      break;
    case PngEncoder::FPNG:
-     png = EncodeWithFPng(image);
+     png = EncodeWithFPng(*image);
      break;
   }
   const uint64_t encode_time = Now();
   std::cout << "PNG encode time (ms): " << (encode_time - end_time) << std::endl;
   std::cout << "Total time (ms): " << (encode_time - start_time) << std::endl;
+  std::cout << Now() << ": Done drawing" << std::endl;
+
+  previous_image = std::move(image);
+  previous_params = params;
   return png;
 }
 
