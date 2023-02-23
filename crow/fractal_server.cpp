@@ -508,6 +508,12 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
     std::cout << "  y_max: " << only.y_max << std::endl;
   }
 
+  // TODO: when computation is quite expensive, this can be too many pixels per
+  // task. This results in us not scheduling enough tasks, and we underutilize
+  // our thread pool. Maybe we compute tasks_per_worker first, which must be an
+  // integer, and then split the work into num_workers * tasks_per_worker? That
+  // way, we never have idle workers. Would be better to actually estimate the
+  // amount of computation required per pixel though.
   constexpr size_t desired_pixels_per_task = 50 * 2000; // TUNE
   std::mutex m;
   size_t total_iters = 0;
@@ -517,6 +523,7 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
       CopyImage(previous_image, image, *delta.overlap);
     });
   }
+  size_t num_tasks = 0;
   for (const auto& region : delta.b_only) {
     const size_t rows_per_task = desired_pixels_per_task / region.width();
     for (size_t start_row = region.y_min; start_row < region.y_max; start_row += rows_per_task) {
@@ -535,9 +542,11 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
 	  total_iters += iters;
 	}
       });
+      ++num_tasks;
     }
   }
   thread_pool.WaitUntilDone();
+  std::cout << "Incremental draw used " << num_tasks << " tasks" << std::endl;
   return total_iters;
 }
 
