@@ -127,17 +127,16 @@
                      body: this.get_url_params(),
                  })
                      .then((response) => {
-                         console.log("1: " + Date.now());
-                         return response.blob();
+                         return response.formData();
                      })
-                     .then((blob) => {
-                         console.log("2: " + Date.now());
+                     .then((form_data) => {
+                         console.log(JSON.parse(form_data.get("metadata")));
+                         var blob = form_data.get("fractal_image");
                          const objectURL = URL.createObjectURL(blob);
                          var old_url = this.image.src;
                          this.image.src = objectURL;
                          URL.revokeObjectURL(old_url);
                          this.pending_request = null;
-                         console.log("3: " + Date.now());
                          this.maybe_request();
                          compute_fps();
                      });
