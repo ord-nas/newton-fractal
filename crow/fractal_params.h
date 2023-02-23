@@ -225,7 +225,8 @@ struct FractalParams {
     FractalParams fractal_params;
 
     // Required params.
-    if (!ParseFiniteDouble(url_params, "i_min", &fractal_params.i_min) ||
+    if (!ParsePositiveInt(url_params, "request_id", &fractal_params.request_id) ||
+	!ParseFiniteDouble(url_params, "i_min", &fractal_params.i_min) ||
 	!ParseFiniteDouble(url_params, "r_min", &fractal_params.r_min) ||
 	!ParseFiniteDouble(url_params, "r_range", &fractal_params.r_range) ||
 	!ParsePositiveInt(url_params, "width", &fractal_params.width) ||
@@ -246,6 +247,7 @@ struct FractalParams {
   }
 
   // Required args.
+  size_t request_id;
   double i_min;
   double r_min;
   double r_range;

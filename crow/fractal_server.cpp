@@ -473,40 +473,40 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
 					   const RGBImage& previous_image,
 					   ThreadPool& thread_pool) {
   if (!ParamsDifferOnlyByPanning(params, previous_params)) {
-    std::cout << "BAIL INCREMENTAL :(" << std::endl;
+    // std::cout << "BAIL INCREMENTAL :(" << std::endl;
     return DynamicBlockThreadedDraw<T, N>(params, p, image, thread_pool);
   }
   const ImageDelta delta = ComputeImageDelta<T>(previous_params, params);
-  std::cout << "A Params (OLD):" << std::endl;
-  std::cout << "  r_min:" << previous_params.r_min << std::endl;
-  std::cout << "  i_min:" << previous_params.i_min << std::endl;
-  std::cout << "  r_range:" << previous_params.r_range << std::endl;
-  std::cout << "B Params (NEW):" << std::endl;
-  std::cout << "  r_min:" << params.r_min << std::endl;
-  std::cout << "  i_min:" << params.i_min << std::endl;
-  std::cout << "  r_range:" << params.r_range << std::endl;
-  std::cout << "Overlap area:" << std::endl;
-  if (delta.overlap.has_value()) {
-    std::cout << "  A (Old):" << std::endl;
-    std::cout << "    x_min: " << delta.overlap->a_region.x_min << std::endl;
-    std::cout << "    x_max: " << delta.overlap->a_region.x_max << std::endl;
-    std::cout << "    y_min: " << delta.overlap->a_region.y_min << std::endl;
-    std::cout << "    y_may: " << delta.overlap->a_region.y_max << std::endl;
-    std::cout << "  B (New):" << std::endl;
-    std::cout << "    x_min: " << delta.overlap->b_region.x_min << std::endl;
-    std::cout << "    x_max: " << delta.overlap->b_region.x_max << std::endl;
-    std::cout << "    y_min: " << delta.overlap->b_region.y_min << std::endl;
-    std::cout << "    y_max: " << delta.overlap->b_region.y_max << std::endl;
-  } else {
-    std::cout << "  NONE" << std::endl;
-  }
-  for (const auto& only : delta.b_only) {
-    std::cout << "B only:" << std::endl;
-    std::cout << "  x_min: " << only.x_min << std::endl;
-    std::cout << "  x_max: " << only.x_max << std::endl;
-    std::cout << "  y_min: " << only.y_min << std::endl;
-    std::cout << "  y_max: " << only.y_max << std::endl;
-  }
+  // std::cout << "A Params (OLD):" << std::endl;
+  // std::cout << "  r_min:" << previous_params.r_min << std::endl;
+  // std::cout << "  i_min:" << previous_params.i_min << std::endl;
+  // std::cout << "  r_range:" << previous_params.r_range << std::endl;
+  // std::cout << "B Params (NEW):" << std::endl;
+  // std::cout << "  r_min:" << params.r_min << std::endl;
+  // std::cout << "  i_min:" << params.i_min << std::endl;
+  // std::cout << "  r_range:" << params.r_range << std::endl;
+  // std::cout << "Overlap area:" << std::endl;
+  // if (delta.overlap.has_value()) {
+  //   std::cout << "  A (Old):" << std::endl;
+  //   std::cout << "    x_min: " << delta.overlap->a_region.x_min << std::endl;
+  //   std::cout << "    x_max: " << delta.overlap->a_region.x_max << std::endl;
+  //   std::cout << "    y_min: " << delta.overlap->a_region.y_min << std::endl;
+  //   std::cout << "    y_may: " << delta.overlap->a_region.y_max << std::endl;
+  //   std::cout << "  B (New):" << std::endl;
+  //   std::cout << "    x_min: " << delta.overlap->b_region.x_min << std::endl;
+  //   std::cout << "    x_max: " << delta.overlap->b_region.x_max << std::endl;
+  //   std::cout << "    y_min: " << delta.overlap->b_region.y_min << std::endl;
+  //   std::cout << "    y_max: " << delta.overlap->b_region.y_max << std::endl;
+  // } else {
+  //   std::cout << "  NONE" << std::endl;
+  // }
+  // for (const auto& only : delta.b_only) {
+  //   std::cout << "B only:" << std::endl;
+  //   std::cout << "  x_min: " << only.x_min << std::endl;
+  //   std::cout << "  x_max: " << only.x_max << std::endl;
+  //   std::cout << "  y_min: " << only.y_min << std::endl;
+  //   std::cout << "  y_max: " << only.y_max << std::endl;
+  // }
 
   // TODO: when computation is quite expensive, this can be too many pixels per
   // task. This results in us not scheduling enough tasks, and we underutilize
@@ -591,7 +591,7 @@ std::string GeneratePng(const FractalParams& params, ThreadPool& thread_pool) {
      break;
    case Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL:
      if (!previous_params.has_value() || previous_image == nullptr) {
-       std::cout << "NO BASELINE FOR INCREMENTAL :(" << std::endl;
+       // std::cout << "NO BASELINE FOR INCREMENTAL :(" << std::endl;
        total_iters = DynamicBlockThreadedDraw<T, 32>(params, p, *image, thread_pool);
      } else {
        total_iters = DynamicBlockThreadedIncrementalDraw<T, 32>(params, p, *image, *previous_params, *previous_image, thread_pool);
@@ -643,12 +643,27 @@ int main() {
     return crow::mustache::load_text("index.html");
   });
 
+  // Params endpoint.
+  CROW_ROUTE(app, "/params").methods(crow::HTTPMethod::POST)
+    ([&](const crow::request& req){
+      const auto params = GetBodyParams(req);
+      // std::cout << "Got the following params in request:" << std::endl;
+      // std::cout << ParamsToString(params);
+      std::optional<FractalParams> fractal_params = FractalParams::Parse(params);
+      if (!fractal_params.has_value()) {
+	std::cout << "Malformed params :(" << std::endl;
+	return crow::response(400);
+      }
+      crow::json::wvalue json({{"request_id", fractal_params->request_id}});
+      return crow::response(json);
+    });
+
   // Fractal image for main page.
   CROW_ROUTE(app, "/fractal").methods(crow::HTTPMethod::POST)
     ([&](const crow::request& req){
       const auto params = GetBodyParams(req);
-      std::cout << "Got the following params in request:" << std::endl;
-      std::cout << ParamsToString(params);
+      // std::cout << "Got the following params in request:" << std::endl;
+      // std::cout << ParamsToString(params);
       std::optional<FractalParams> fractal_params = FractalParams::Parse(params);
       if (!fractal_params.has_value()) {
 	std::cout << "Malformed params :(" << std::endl;
@@ -679,14 +694,9 @@ int main() {
       }
 
       crow::multipart::part metadata_part;
-      metadata_part.body = "This is some additional data!";
       {
-	crow::json::wvalue metadata({{"message", "Hello, World!"},
-				     {"nested_object", {
-					 {"a", 1},
-					 {"b", 42},
-				       }},
-				     {"list", std::vector<crow::json::wvalue>{1,2,3}}});
+	crow::json::wvalue metadata({{"data_id", fractal_params->request_id},
+				     {"viewport_id", fractal_params->request_id}});
 	metadata_part.body = metadata.dump();
 	crow::multipart::header content_type_header;
 	content_type_header.value = "application/json";
@@ -725,6 +735,6 @@ int main() {
   });
 
   //set the port, set the app to run on multiple threads, and run the app
-  // app.port(18080).multithreaded().run();
-  app.port(18080).run();
+  app.port(18080).multithreaded().run();
+  //app.port(18080).run();
 }

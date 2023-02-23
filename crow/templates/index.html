@@ -55,6 +55,14 @@
              };
          }
 
+         function random_char() {
+             return String.fromCharCode(97 + Math.floor(Math.random() * 26));
+         }
+
+         function random_string(length) {
+             return Array(length).fill().map(random_char).join("");
+         }
+
          class FractalRequester {
              constructor(image, width, height) {
                  this.image = image;
@@ -63,8 +71,16 @@
                      height: height,
                      max_iters: 100,
                  };
+                 this.session_token = random_string(32);
+                 this.current_request_id = 1;
+                 this.last_fractal_data_id = null;
+                 this.last_fractal_viewport_id = null;
+                 this.last_fractal_elapsed_time = null;
                  this.last_request_params = {};
-                 this.pending_request = null;
+                 this.pending_params_request = null;
+                 this.last_params_request_time = null;
+                 this.pending_fractal_request = null;
+                 this.last_fractal_request_time = null;
              }
 
              view_state_changed(new_state) {
@@ -80,15 +96,15 @@
                  this.current_params.zero_greens = new_state.zeros.map((z) => z.green);
                  this.current_params.zero_blues = new_state.zeros.map((z) => z.blue);
 
-                 this.maybe_request();
+                 this.maybe_fractal_request();
              }
 
              max_iters_changed(max_iters) {
                  this.current_params.max_iters = max_iters;
-                 this.maybe_request();
+                 this.maybe_fractal_request();
              }
 
-             get_url_params() {
+             generate_url_params() {
                  let param_array = [];
                  for (var [key, values] of Object.entries(this.current_params)) {
                      if (!Array.isArray(values)) {
@@ -98,6 +114,10 @@
                          param_array.push([key, value]);
                      }
                  }
+                 // Dump in identifiers.
+                 this.current_request_id += 1;
+                 param_array.push(["session_token", this.session_token]);
+                 param_array.push(["request_id", this.current_request_id]);
                  // Dump in other UI options.
                  param_array.push(["strategy", document.getElementById("strategy").value]);
                  param_array.push(["precision", document.getElementById("precision").value]);
@@ -105,39 +125,117 @@
                  return new URLSearchParams(param_array);
              }
 
-             maybe_request() {
-                 // If we have a pending request, nothing to do.
-                 if (this.pending_request !== null) {
+             tick() {
+                 if (document.getElementById("async_params").checked) {
+                     this.maybe_params_request();
+                 }
+             }
+
+             maybe_params_request() {
+                 // If we have a pending params request already, nothing to do.
+                 if (this.pending_params_request !== null) {
                      return;
                  }
 
-                 // If the params are the same as our preview request, nothing to do.
+                 // If we don't have a pending fractal request, nothing to do.
+                 if (this.pending_fractal_request === null) {
+                     return;
+                 }
+
+                 // If the last fractal request didn't take at least 50ms, nothing to do.
+                 if (this.last_fractal_elapsed_time === null ||
+                     this.last_fractal_elapsed_time < 50) {
+                     return;
+                 }
+
+                 // If the last message we sent (on either channel) wasn't at least 30ms ago, nothing to do.
+                 var fractal_time = (this.last_fractal_request_time === null ?
+                                     0 : this.last_fractal_request_time);
+                 var param_time = (this.last_param_request_time === null ?
+                                   0 : this.last_param_request_time);
+                 var most_recent = Math.max(fractal_time, param_time);
+                 if (Date.now() - most_recent < 30) {
+                     return;
+                 }
+
+                 // If the params are the same as our previous request, nothing to do.
                  if (shallow_equal(this.last_request_params, this.current_params)) {
                      return;
                  }
 
                  // Schedule a new request!
                  Object.assign(this.last_request_params, this.current_params);
-                 console.log("Requesting", this.current_params);
-                 this.pending_request = fetch("fractal", {
+                 // console.log("Params request", this.current_params);
+                 this.last_param_request_time = Date.now();
+                 this.pending_params_request = fetch("params", {
                      method: 'POST',
                      headers: {
                          'Content-Type': 'application/x-www-form-urlencoded'
                      },
-                     body: this.get_url_params(),
+                     body: this.generate_url_params(),
+                 })
+                     .then((response) => {
+                         return response.json();
+                     })
+                     .then((json) => {
+                         console.log("Params response", json);
+                         this.pending_params_request = null;
+                     });
+             }
+
+             fractal_up_to_date() {
+                 if (this.last_fractal_data_id == null ||
+                     this.last_fractal_data_id < this.current_request_id) {
+                     return false;
+                 }
+                 if (this.last_fractal_viewport_id == null ||
+                     this.last_fractal_viewport_id < this.current_request_id) {
+                     return false;
+                 }
+                 return true;
+             }
+
+             maybe_fractal_request() {
+                 // If we have a pending request, nothing to do.
+                 if (this.pending_fractal_request !== null) {
+                     return;
+                 }
+
+                 // If the params are the same as our previous request and we've
+                 // already received a fractal with the latest params, nothing to
+                 // do.
+                 if (this.fractal_up_to_date() &&
+                     shallow_equal(this.last_request_params, this.current_params)) {
+                     return;
+                 }
+
+                 // Schedule a new request!
+                 Object.assign(this.last_request_params, this.current_params);
+                 console.log("Fractal request", this.current_params);
+                 this.last_fractal_request_time = Date.now();
+                 this.pending_fractal_request = fetch("fractal", {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/x-www-form-urlencoded'
+                     },
+                     body: this.generate_url_params(),
                  })
                      .then((response) => {
                          return response.formData();
                      })
                      .then((form_data) => {
-                         console.log(JSON.parse(form_data.get("metadata")));
+                         var metadata = JSON.parse(form_data.get("metadata"));
+                         console.log("Fractal response", metadata);
+                         this.last_fractal_data_id = metadata["data_id"];
+                         this.last_fractal_viewport_id = metadata["viewport_id"];
+                         this.last_fractal_elapsed_time = Date.now() - this.last_fractal_request_time;
+                         this.pending_fractal_request = null;
                          var blob = form_data.get("fractal_image");
                          const objectURL = URL.createObjectURL(blob);
                          var old_url = this.image.src;
                          this.image.src = objectURL;
                          URL.revokeObjectURL(old_url);
-                         this.pending_request = null;
-                         this.maybe_request();
+                         this.maybe_fractal_request();
                          compute_fps();
                      });
              }
@@ -397,6 +495,13 @@
 
              // Force an initial request.
              tracker.run_callbacks();
+
+             // Give the requester a tick every frame.
+             const tick = function() {
+                 requester.tick();
+                 window.requestAnimationFrame(tick);
+             }
+             window.requestAnimationFrame(tick);
          }
 
          addEventListener("load", (event) => main());
@@ -428,6 +533,8 @@
                 <option value="FPNG">FPNG</option>
                 <option value="PNGPP">PNG++ (via libpng)</option>
             </select>
+            <input type="checkbox" id="async_params" checked>
+            <label>Send async param requests during long computations</label>
         </p>
         <p>
             Random zeros:
