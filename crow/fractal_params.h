@@ -28,7 +28,23 @@ enum class PngEncoder {
 
 enum class HandlerType {
   SYNCHRONOUS,
+  PIPELINED,
 };
+
+bool ParseNonEmptyString(const crow::query_string& url_params,
+			 const std::string& key,
+			 std::string* output) {
+  const char* value = url_params.get(key);
+  if (value == nullptr) {
+    return false;
+  }
+  std::string s(value);
+  if (s.empty()) {
+    return false;
+  }
+  *output = s;
+  return true;
+}
 
 bool ToInt(const char* c_str,
 	   int* output,
@@ -70,6 +86,21 @@ bool ParsePositiveInt(const crow::query_string& url_params,
   }
   int int_value;
   if (!ToInt(value, &int_value, /*min_value=*/1)) {
+    return false;
+  }
+  *output = static_cast<size_t>(int_value);
+  return true;
+}
+
+bool ParseNonNegativeInt(const crow::query_string& url_params,
+			 const std::string& key,
+			 size_t* output) {
+  const char* value = url_params.get(key);
+  if (value == nullptr) {
+    return false;
+  }
+  int int_value;
+  if (!ToInt(value, &int_value, /*min_value=*/0)) {
     return false;
   }
   *output = static_cast<size_t>(int_value);
@@ -235,6 +266,9 @@ bool ParseHandlerType(const crow::query_string& url_params,
   if (s == "SYNCHRONOUS") {
     *output = HandlerType::SYNCHRONOUS;
     return true;
+  } else if (s == "PIPELINED") {
+    *output = HandlerType::PIPELINED;
+    return true;
   }
   return false;
 }
@@ -244,7 +278,10 @@ struct FractalParams {
     FractalParams fractal_params;
 
     // Required params.
-    if (!ParsePositiveInt(url_params, "request_id", &fractal_params.request_id) ||
+    if (!ParseNonEmptyString(url_params, "session_id", &fractal_params.session_id) ||
+	!ParsePositiveInt(url_params, "request_id", &fractal_params.request_id) ||
+	!ParseNonNegativeInt(url_params, "last_data_id", &fractal_params.last_data_id) ||
+	!ParseNonNegativeInt(url_params, "last_viewport_id", &fractal_params.last_viewport_id) ||
 	!ParseFiniteDouble(url_params, "i_min", &fractal_params.i_min) ||
 	!ParseFiniteDouble(url_params, "r_min", &fractal_params.r_min) ||
 	!ParseFiniteDouble(url_params, "r_range", &fractal_params.r_range) ||
@@ -267,7 +304,10 @@ struct FractalParams {
   }
 
   // Required args.
+  std::string session_id;
   size_t request_id;
+  size_t last_data_id;
+  size_t last_viewport_id;
   double i_min;
   double r_min;
   double r_range;

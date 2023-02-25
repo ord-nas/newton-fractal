@@ -71,7 +71,7 @@
                      height: height,
                      max_iters: 100,
                  };
-                 this.session_token = random_string(32);
+                 this.session_id = random_string(32);
                  this.current_request_id = 1;
                  this.last_fractal_data_id = null;
                  this.last_fractal_viewport_id = null;
@@ -115,9 +115,17 @@
                      }
                  }
                  // Dump in identifiers.
-                 this.current_request_id += 1;
-                 param_array.push(["session_token", this.session_token]);
+                 if (!shallow_equal(this.last_request_params, this.current_params)) {
+                     this.current_request_id += 1;
+                 }
+                 param_array.push(["session_id", this.session_id]);
                  param_array.push(["request_id", this.current_request_id]);
+                 param_array.push(["last_data_id",
+                                   this.last_fractal_data_id == null ?
+                                   0 : this.last_fractal_data_id]);
+                 param_array.push(["last_viewport_id",
+                                   this.last_fractal_viewport_id == null ?
+                                   0 : this.last_fractal_viewport_id]);
                  // Dump in other UI options.
                  param_array.push(["strategy", document.getElementById("strategy").value]);
                  param_array.push(["precision", document.getElementById("precision").value]);
@@ -144,18 +152,18 @@
                  }
 
                  // If the last fractal request didn't take at least 50ms, nothing to do.
-                 if (this.last_fractal_elapsed_time === null ||
-                     this.last_fractal_elapsed_time < 50) {
-                     return;
-                 }
+                 /* if (this.last_fractal_elapsed_time === null ||
+                  *     this.last_fractal_elapsed_time < 50) {
+                  *     return;
+                  * }*/
 
-                 // If the last message we sent (on either channel) wasn't at least 30ms ago, nothing to do.
+                 // If the last message we sent (on either channel) wasn't at least 50ms ago, nothing to do.
                  var fractal_time = (this.last_fractal_request_time === null ?
                                      0 : this.last_fractal_request_time);
                  var param_time = (this.last_param_request_time === null ?
                                    0 : this.last_param_request_time);
                  var most_recent = Math.max(fractal_time, param_time);
-                 if (Date.now() - most_recent < 30) {
+                 if (Date.now() - most_recent < 50) {
                      return;
                  }
 
@@ -165,6 +173,7 @@
                  }
 
                  // Schedule a new request!
+                 var url_params = this.generate_url_params();
                  Object.assign(this.last_request_params, this.current_params);
                  // console.log("Params request", this.current_params);
                  this.last_param_request_time = Date.now();
@@ -173,7 +182,7 @@
                      headers: {
                          'Content-Type': 'application/x-www-form-urlencoded'
                      },
-                     body: this.generate_url_params(),
+                     body: url_params,
                  })
                      .then((response) => {
                          return response.json();
@@ -211,6 +220,7 @@
                  }
 
                  // Schedule a new request!
+                 var url_params = this.generate_url_params();
                  Object.assign(this.last_request_params, this.current_params);
                  console.log("Fractal request", this.current_params);
                  this.last_fractal_request_time = Date.now();
@@ -219,7 +229,7 @@
                      headers: {
                          'Content-Type': 'application/x-www-form-urlencoded'
                      },
-                     body: this.generate_url_params(),
+                     body: url_params,
                  })
                      .then((response) => {
                          return response.formData();
@@ -536,7 +546,8 @@
             </select>
             Handler:
             <select id="handler">
-                <option value="SYNCHRONOUS_HANDLER">Synchronous</option>
+                <option value="SYNCHRONOUS">Synchronous</option>
+                <option value="PIPELINED">Pipelined</option>
             </select>
             <input type="checkbox" id="async_params" checked>
             <label>Async param requests</label>

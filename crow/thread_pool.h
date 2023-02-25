@@ -1,4 +1,4 @@
- #ifndef _CROW_FRACTAL_SERVER_THREAD_POOL_
+#ifndef _CROW_FRACTAL_SERVER_THREAD_POOL_
 #define _CROW_FRACTAL_SERVER_THREAD_POOL_
 
 #include <boost/asio/io_service.hpp>
