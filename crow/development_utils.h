@@ -43,4 +43,9 @@ std::string GenerateSamplePng() {
   return png_sstrm.str();
 }
 
+uint64_t Now() {
+  using namespace std::chrono;
+  return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
 #endif // _CROW_FRACTAL_SERVER_DEVELOPMENT_UTILS_
