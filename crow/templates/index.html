@@ -122,6 +122,7 @@
                  param_array.push(["strategy", document.getElementById("strategy").value]);
                  param_array.push(["precision", document.getElementById("precision").value]);
                  param_array.push(["png_encoder", document.getElementById("png_encoder").value]);
+                 param_array.push(["handler", document.getElementById("handler").value]);
                  return new URLSearchParams(param_array);
              }
 
@@ -532,6 +533,10 @@
             <select id="png_encoder">
                 <option value="FPNG">FPNG</option>
                 <option value="PNGPP">PNG++ (via libpng)</option>
+            </select>
+            Handler:
+            <select id="handler">
+                <option value="SYNCHRONOUS_HANDLER">Synchronous</option>
             </select>
             <input type="checkbox" id="async_params" checked>
             <label>Async param requests</label>

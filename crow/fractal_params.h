@@ -26,6 +26,10 @@ enum class PngEncoder {
   FPNG,
 };
 
+enum class HandlerType {
+  SYNCHRONOUS,
+};
+
 bool ToInt(const char* c_str,
 	   int* output,
 	   std::optional<int> min_value = std::nullopt,
@@ -220,6 +224,21 @@ bool ParsePngEncoder(const crow::query_string& url_params,
   return false;
 }
 
+bool ParseHandlerType(const crow::query_string& url_params,
+		      const std::string& key,
+		      std::optional<HandlerType>* output) {
+  const char* c_str = url_params.get(key);
+  if (c_str == nullptr) {
+    return false;
+  }
+  const std::string s(c_str);
+  if (s == "SYNCHRONOUS") {
+    *output = HandlerType::SYNCHRONOUS;
+    return true;
+  }
+  return false;
+}
+
 struct FractalParams {
   static std::optional<FractalParams> Parse(const crow::query_string& url_params) {
     FractalParams fractal_params;
@@ -242,6 +261,7 @@ struct FractalParams {
     ParsePrecision(url_params, "precision", &fractal_params.precision);
     ParseStrategy(url_params, "strategy", &fractal_params.strategy);
     ParsePngEncoder(url_params, "png_encoder", &fractal_params.png_encoder);
+    ParseHandlerType(url_params, "handler", &fractal_params.handler_type);
 
     return fractal_params;
   }
@@ -261,6 +281,7 @@ struct FractalParams {
   std::optional<Precision> precision;
   std::optional<Strategy> strategy;
   std::optional<PngEncoder> png_encoder;
+  std::optional<HandlerType> handler_type;
 };
 
 bool operator==(const png::rgb_pixel& a,

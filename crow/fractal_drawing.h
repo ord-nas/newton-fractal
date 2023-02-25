@@ -226,40 +226,42 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
   return total_iters;
 }
 
+struct DrawFractalArgs {
+  const FractalParams& params;
+  RGBImage& image;
+
+  const std::optional<FractalParams>& previous_params;
+  const RGBImage* previous_image;
+
+  Coordinator& coordinator;
+};
+
 template <typename T>
-std::pair<RGBImage*, size_t> DrawFractal(const FractalParams& params, Coordinator& coordinator) {
-  // Gross. TODO FIXME
-  static std::optional<FractalParams> previous_params = std::nullopt;
-  static std::unique_ptr<RGBImage> previous_image = nullptr;
-
+size_t DrawFractal(const DrawFractalArgs& args) {
   // Figure out what polynomial we're drawing.
-  const AnalyzedPolynomial<T> p = AnalyzedPolynomial<T>(DoubleTo<T>(params.zeros));
+  const AnalyzedPolynomial<T> p = AnalyzedPolynomial<T>(DoubleTo<T>(args.params.zeros));
   std::cout << "Drawing: " << p << std::endl;
-
-  // Set up the image.
-  auto image = std::make_unique<RGBImage>(params.width, params.height);
 
   // Dispatch image generation.
   size_t total_iters = 0;
-  switch (params.strategy.value_or(Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL)) {
+  switch (args.params.strategy.value_or(Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL)) {
   case Strategy::NAIVE:
-    total_iters = NaiveDraw<T>(params, p, *image);
+    total_iters = NaiveDraw<T>(args.params, p, args.image);
     break;
   case Strategy::DYNAMIC_BLOCK:
-    total_iters = DynamicBlockDraw<T, 32>(params, p, *image);
+    total_iters = DynamicBlockDraw<T, 32>(args.params, p, args.image);
     break;
   case Strategy::DYNAMIC_BLOCK_THREADED:
-    total_iters = DynamicBlockThreadedDraw<T, 32>(params, p, *image, coordinator);
+    total_iters = DynamicBlockThreadedDraw<T, 32>(
+        args.params, p, args.image, args.coordinator);
     break;
   case Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL:
     total_iters = DynamicBlockThreadedIncrementalDraw<T, 32>(
-        params, p, *image, coordinator, previous_params, previous_image.get());
+        args.params, p, args.image, args.coordinator, args.previous_params, args.previous_image);
     break;
   }
 
-  previous_image = std::move(image);
-  previous_params = params;
-  return std::make_pair(previous_image.get(), total_iters);
+  return total_iters;
 }
 
 #endif // _CROW_FRACTAL_SERVER_FRACTAL_DRAWING_

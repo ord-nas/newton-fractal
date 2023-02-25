@@ -27,6 +27,7 @@
 #include "pixel_iterator.h"
 #include "fractal_drawing.h"
 #include "png_encoding.h"
+#include "handler_group.h"
 
 crow::query_string GetBodyParams(const crow::request& req) {
   std::string fake_url = "?" + req.body;
@@ -53,61 +54,6 @@ std::string ParamsToString(const crow::query_string& params) {
   return ss.str();
 }
 
-template <typename T>
-std::string GeneratePng(const FractalParams& params, Coordinator& coordinator) {
-  std::cout << Now() << ": Start generating PNG" << std::endl;
-
-  // Draw the fractal.
-  const uint64_t start_time = Now();
-  auto [image, total_iters] = DrawFractal<T>(params, coordinator);
-  const uint64_t end_time = Now();
-  std::cout << "Total iterations: " << total_iters << std::endl;
-  std::cout << "Computation time (ms): " << (end_time - start_time) << std::endl;
-
-  // Encode to PNG.
-  std::string png = EncodePng(params, *image);
-  const uint64_t encode_time = Now();
-  std::cout << "PNG encode time (ms): " << (encode_time - end_time) << std::endl;
-  std::cout << "Total time (ms): " << (encode_time - start_time) << std::endl;
-
-  std::cout << Now() << ": Done generating PNG" << std::endl;
-  return png;
-}
-
-crow::response ImageWithMetadata(std::string png_contents,
-				 const crow::json::wvalue& metadata) {
-
-  crow::multipart::part png_part;
-  png_part.body = std::move(png_contents);
-  {
-    crow::multipart::header content_type_header;
-    content_type_header.value = "image/png";
-    crow::multipart::header content_disposition_header;
-    content_disposition_header.value = "form-data";
-    content_disposition_header.params["name"] = "fractal_image";
-    content_disposition_header.params["filename"] = "fractal_image.png";
-    png_part.headers.emplace("Content-Type", content_type_header);
-    png_part.headers.emplace("Content-Disposition", content_disposition_header);
-  }
-
-  crow::multipart::part metadata_part;
-  metadata_part.body = metadata.dump();
-  {
-    crow::multipart::header content_type_header;
-    content_type_header.value = "application/json";
-    crow::multipart::header content_disposition_header;
-    content_disposition_header.value = "form-data";
-    content_disposition_header.params["name"] = "metadata";
-    metadata_part.headers.emplace("Content-Type", content_type_header);
-    metadata_part.headers.emplace("Content-Disposition", content_disposition_header);
-  }
-
-  return crow::response(crow::multipart::message(/*header=*/{},
-						 /*boudary=*/"CROW-BOUNDARY",
-						 /*parts=*/{png_part, metadata_part}));
-}
-
-
 int main() {
   std::cout << "Using Boost "
 	    << BOOST_VERSION / 100000     << "."  // major version
@@ -120,7 +66,7 @@ int main() {
   // Using 8 threads (since we have 8 logical CPUs) even though there are only 4
   // physical cores. Experiments seem to show that 8 is slightly faster
   // (although not 2x faster) than 4.
-  Coordinator coordinator(/*num_threads=*/8);
+  HandlerGroup handlers(/*num_threads=*/8);
 
   crow::SimpleApp app; //define your crow application
 
@@ -140,8 +86,7 @@ int main() {
 	std::cout << "Malformed params :(" << std::endl;
 	return crow::response(400);
       }
-      crow::json::wvalue json({{"request_id", fractal_params->request_id}});
-      return crow::response(json);
+      return handlers.HandleParamsRequest(*fractal_params);
     });
 
   // Fractal image for main page.
@@ -155,20 +100,7 @@ int main() {
 	std::cout << "Malformed params :(" << std::endl;
 	return crow::response(400);
       }
-
-      std::string png;
-      switch (fractal_params->precision.value_or(Precision::SINGLE)) {
-       case Precision::SINGLE:
-	 png = GeneratePng<float>(*fractal_params, coordinator);
-	 break;
-       case Precision::DOUBLE:
-	 png = GeneratePng<double>(*fractal_params, coordinator);
-	 break;
-      }
-
-      return ImageWithMetadata(std::move(png),
-			       {{"data_id", fractal_params->request_id},
-				{"viewport_id", fractal_params->request_id}});
+      return handlers.HandleFractalRequest(*fractal_params);
     });
 
   // Test page - image cycler.
