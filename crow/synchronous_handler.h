@@ -21,23 +21,13 @@ class SynchronousHandler : public Handler {
   }
 
   crow::response HandleFractalRequest(const FractalParams& params) {
-    std::string png;
-    switch (params.precision.value_or(Precision::SINGLE)) {
-      case Precision::SINGLE:
-	png = GeneratePng<float>(params);
-	break;
-      case Precision::DOUBLE:
-	png = GeneratePng<double>(params);
-	break;
-    }
-
+    std::string png = GeneratePng(params);
     return ImageWithMetadata(std::move(png),
 			     {{"data_id", params.request_id},
 			      {"viewport_id", params.request_id}});
   }
 
  private:
-  template <typename T>
   std::string GeneratePng(const FractalParams& params) {
     std::cout << Now() << ": Start generating PNG" << std::endl;
     const uint64_t start_time = Now();
@@ -46,7 +36,7 @@ class SynchronousHandler : public Handler {
     auto image = std::make_unique<RGBImage>(params.width, params.height);
 
     // Draw the fractal.
-    const size_t total_iters = DrawFractal<T>({
+    const size_t total_iters = DrawFractal({
 	.params = params,
 	.image = *image,
 	.previous_params = previous_params_,

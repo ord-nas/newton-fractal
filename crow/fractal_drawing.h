@@ -240,7 +240,7 @@ struct DrawFractalArgs {
 };
 
 template <typename T>
-size_t DrawFractal(const DrawFractalArgs& args) {
+size_t DrawFractalImpl(const DrawFractalArgs& args) {
   // Figure out what polynomial we're drawing.
   const AnalyzedPolynomial<T> p = AnalyzedPolynomial<T>(DoubleTo<T>(args.params.zeros));
   std::cout << "Drawing: " << p << std::endl;
@@ -264,6 +264,19 @@ size_t DrawFractal(const DrawFractalArgs& args) {
       break;
   }
 
+  return total_iters;
+}
+
+size_t DrawFractal(const DrawFractalArgs& args) {
+  size_t total_iters = 0;
+  switch (args.params.precision.value_or(Precision::SINGLE)) {
+    case Precision::SINGLE:
+      total_iters = DrawFractalImpl<float>(args);
+      break;
+    case Precision::DOUBLE:
+      total_iters = DrawFractalImpl<double>(args);
+      break;
+  }
   return total_iters;
 }
 

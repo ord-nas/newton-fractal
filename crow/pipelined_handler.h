@@ -102,16 +102,7 @@ private:
 	.previous_image = previous_image.get(),
 	.thread_pool = thread_pool_,
       };
-      size_t total_iters = 0;
-      switch (input->precision.value_or(Precision::SINGLE)) {
-        case Precision::SINGLE:
-	  total_iters = DrawFractal<float>(args);
-	  break;
-        case Precision::DOUBLE:
-	  total_iters = DrawFractal<double>(args);
-	  break;
-      }
-
+      const size_t total_iters = DrawFractal(args);
       const uint64_t end_time = Now();
       std::cout << "Total iterations: " << total_iters << std::endl;
       std::cout << "Computation time (ms): " << (end_time - start_time) << std::endl;
