@@ -1,4 +1,4 @@
-#ifndef _CROW_FRACTAL_SERVER_THREAD_POOL_
+ #ifndef _CROW_FRACTAL_SERVER_THREAD_POOL_
 #define _CROW_FRACTAL_SERVER_THREAD_POOL_
 
 #include <boost/asio/io_service.hpp>
@@ -9,8 +9,10 @@ class ThreadPool {
  public:
   explicit ThreadPool(size_t num_threads) : work_(io_service_) {
     for (size_t i = 0; i < num_threads; ++i) {
-      auto* thread = new boost::thread(boost::bind(&boost::asio::io_service::run, &io_service_));
-      std::cout << "ThreadPool created thread with handle: " << thread->native_handle() << std::endl;
+      auto* thread = new boost::thread(boost::bind(&boost::asio::io_service::run,
+						   &io_service_));
+      std::cout << "ThreadPool created thread with handle: "
+		<< thread->native_handle() << std::endl;
 
       // Uncomment the code below to set a CPU affinity for the given thread.
       // Experiments show this doesn't seem to help much.

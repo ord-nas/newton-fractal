@@ -22,7 +22,6 @@
 #include "development_utils.h"
 #include "fractal_params.h"
 #include "thread_pool.h"
-#include "coordinator.h"
 #include "image_regions.h"
 #include "pixel_iterator.h"
 #include "fractal_drawing.h"
@@ -66,7 +65,8 @@ int main() {
   // Using 8 threads (since we have 8 logical CPUs) even though there are only 4
   // physical cores. Experiments seem to show that 8 is slightly faster
   // (although not 2x faster) than 4.
-  HandlerGroup handlers(/*num_threads=*/8);
+  ThreadPool thread_pool(/*num_threads=*/8);
+  HandlerGroup handlers(&thread_pool);
 
   crow::SimpleApp app; //define your crow application
 

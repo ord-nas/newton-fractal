@@ -9,8 +9,8 @@
 
 class HandlerGroup : public Handler {
  public:
-  explicit HandlerGroup(size_t num_threads)
-    : synchronous_handler_(num_threads) {}
+  explicit HandlerGroup(ThreadPool* thread_pool)
+    : synchronous_handler_(thread_pool) {}
 
   crow::response HandleParamsRequest(const FractalParams& params) override {
     return GetHandler(params).HandleParamsRequest(params);

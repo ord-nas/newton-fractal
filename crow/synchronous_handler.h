@@ -8,10 +8,11 @@
 #include "fractal_drawing.h"
 #include "png_encoding.h"
 #include "response.h"
+#include "thread_pool.h"
 
 class SynchronousHandler : public Handler {
  public:
-  explicit SynchronousHandler(size_t num_threads) : coordinator_(num_threads) {}
+  explicit SynchronousHandler(ThreadPool* thread_pool) : thread_pool_(*thread_pool) {}
 
   crow::response HandleParamsRequest(const FractalParams& params) override {
     // Just black-hole the request and respond with an ack.
@@ -22,12 +23,12 @@ class SynchronousHandler : public Handler {
   crow::response HandleFractalRequest(const FractalParams& params) {
     std::string png;
     switch (params.precision.value_or(Precision::SINGLE)) {
-    case Precision::SINGLE:
-      png = GeneratePng<float>(params);
-      break;
-    case Precision::DOUBLE:
-      png = GeneratePng<double>(params);
-      break;
+      case Precision::SINGLE:
+	png = GeneratePng<float>(params);
+	break;
+      case Precision::DOUBLE:
+	png = GeneratePng<double>(params);
+	break;
     }
 
     return ImageWithMetadata(std::move(png),
@@ -35,7 +36,7 @@ class SynchronousHandler : public Handler {
 			      {"viewport_id", params.request_id}});
   }
 
-private:
+ private:
   template <typename T>
   std::string GeneratePng(const FractalParams& params) {
     std::cout << Now() << ": Start generating PNG" << std::endl;
@@ -50,7 +51,7 @@ private:
 	.image = *image,
 	.previous_params = previous_params_,
 	.previous_image = previous_image_.get(),
-	.coordinator = coordinator_,
+	.thread_pool = thread_pool_,
       });
     const uint64_t end_time = Now();
     std::cout << "Total iterations: " << total_iters << std::endl;
@@ -70,7 +71,9 @@ private:
     return png;
   }
 
-  Coordinator coordinator_;
+  // Unowned.
+  ThreadPool& thread_pool_;
+
   std::optional<FractalParams> previous_params_ = std::nullopt;
   std::unique_ptr<RGBImage> previous_image_ = nullptr;
 };

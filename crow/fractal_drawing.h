@@ -11,7 +11,7 @@
 #include "analyzed_polynomial.h"
 #include "fractal_params.h"
 #include "thread_pool.h"
-#include "coordinator.h"
+#include "task_group.h"
 #include "image_regions.h"
 #include "pixel_iterator.h"
 #include "development_utils.h"
@@ -151,7 +151,8 @@ size_t DynamicBlockDraw(const FractalParams& params, const AnalyzedPolynomial<T>
 }
 
 template <typename T, size_t N>
-size_t DynamicBlockThreadedDraw(const FractalParams& params, const AnalyzedPolynomial<T>& p, RGBImage& image, Coordinator& coordinator) {
+size_t DynamicBlockThreadedDraw(const FractalParams& params, const AnalyzedPolynomial<T>& p, RGBImage& image, ThreadPool& thread_pool) {
+  TaskGroup task_group(&thread_pool);
   constexpr size_t rows_per_task = 50; //48;
   std::mutex m;
   size_t total_iters = 0;
@@ -163,14 +164,14 @@ size_t DynamicBlockThreadedDraw(const FractalParams& params, const AnalyzedPolyn
       .y_min = start_row,
       .y_max = end_row,
     };
-    coordinator.QueueComputation([rect, params, p,
-				  &image, &total_iters, &m]() {
+    task_group.Add([rect, params, p,
+		    &image, &total_iters, &m]() {
       size_t iters = FillRegionUsingDynamicBlocks<T, N>(params, p, rect, image);
       std::scoped_lock lock(m);
       total_iters += iters;
     });
   }
-  coordinator.WaitUntilComputationDone();
+  task_group.WaitUntilDone();
   return total_iters;
 }
 
@@ -178,14 +179,21 @@ template <typename T, size_t N>
 size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
 					   const AnalyzedPolynomial<T>& p,
 					   RGBImage& image,
-					   Coordinator& coordinator,
+					   ThreadPool& thread_pool,
 					   const std::optional<FractalParams>& previous_params,
 					   const RGBImage* previous_image) {
   if (!previous_params.has_value() || previous_image == nullptr ||
       !ParamsDifferOnlyByPanning(params, *previous_params)) {
-    return DynamicBlockThreadedDraw<T, N>(params, p, image, coordinator);
+    return DynamicBlockThreadedDraw<T, N>(params, p, image, thread_pool);
   }
+
   const ImageDelta delta = ComputeImageDelta<T>(*previous_params, params);
+  TaskGroup task_group(&thread_pool);
+  if (delta.overlap.has_value()) {
+    task_group.Add([previous_image, &image, delta]() {
+      CopyImage(*previous_image, image, *delta.overlap);
+    });
+  }
 
   // TODO: when computation is quite expensive, this can be too many pixels per
   // task. This results in us not scheduling enough tasks, and we underutilize
@@ -196,11 +204,6 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
   constexpr size_t desired_pixels_per_task = 50 * 2000; // TUNE
   std::mutex m;
   size_t total_iters = 0;
-  if (delta.overlap.has_value()) {
-    coordinator.QueueComputation([previous_image, &image, delta]() {
-      CopyImage(*previous_image, image, *delta.overlap);
-    });
-  }
   size_t num_tasks = 0;
   for (const auto& region : delta.b_only) {
     const size_t rows_per_task = desired_pixels_per_task / region.width();
@@ -212,8 +215,8 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
 	.y_min = start_row,
 	.y_max = end_row,
       };
-      coordinator.QueueComputation([rect, params, p,
-				    &image, &total_iters, &m]() {
+      task_group.Add([rect, params, p,
+		      &image, &total_iters, &m]() {
 	size_t iters = FillRegionUsingDynamicBlocks<T, N>(params, p, rect, image);
 	std::scoped_lock lock(m);
 	total_iters += iters;
@@ -221,7 +224,7 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
       ++num_tasks;
     }
   }
-  coordinator.WaitUntilComputationDone();
+  task_group.WaitUntilDone();
   std::cout << "Incremental draw used " << num_tasks << " tasks" << std::endl;
   return total_iters;
 }
@@ -233,7 +236,7 @@ struct DrawFractalArgs {
   const std::optional<FractalParams>& previous_params;
   const RGBImage* previous_image;
 
-  Coordinator& coordinator;
+  ThreadPool& thread_pool;
 };
 
 template <typename T>
@@ -245,20 +248,20 @@ size_t DrawFractal(const DrawFractalArgs& args) {
   // Dispatch image generation.
   size_t total_iters = 0;
   switch (args.params.strategy.value_or(Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL)) {
-  case Strategy::NAIVE:
-    total_iters = NaiveDraw<T>(args.params, p, args.image);
-    break;
-  case Strategy::DYNAMIC_BLOCK:
-    total_iters = DynamicBlockDraw<T, 32>(args.params, p, args.image);
-    break;
-  case Strategy::DYNAMIC_BLOCK_THREADED:
-    total_iters = DynamicBlockThreadedDraw<T, 32>(
-        args.params, p, args.image, args.coordinator);
-    break;
-  case Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL:
-    total_iters = DynamicBlockThreadedIncrementalDraw<T, 32>(
-        args.params, p, args.image, args.coordinator, args.previous_params, args.previous_image);
-    break;
+    case Strategy::NAIVE:
+      total_iters = NaiveDraw<T>(args.params, p, args.image);
+      break;
+    case Strategy::DYNAMIC_BLOCK:
+      total_iters = DynamicBlockDraw<T, 32>(args.params, p, args.image);
+      break;
+    case Strategy::DYNAMIC_BLOCK_THREADED:
+      total_iters = DynamicBlockThreadedDraw<T, 32>(
+          args.params, p, args.image, args.thread_pool);
+      break;
+    case Strategy::DYNAMIC_BLOCK_THREADED_INCREMENTAL:
+      total_iters = DynamicBlockThreadedIncrementalDraw<T, 32>(
+          args.params, p, args.image, args.thread_pool, args.previous_params, args.previous_image);
+      break;
   }
 
   return total_iters;
