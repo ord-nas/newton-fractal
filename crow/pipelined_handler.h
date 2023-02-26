@@ -24,7 +24,7 @@ class PipelinedHandler : public Handler {
   crow::response HandleParamsRequest(const FractalParams& params) override {
     SetSessionId(params.session_id);
     std::cout << "HandleParamsRequest putting version: " << params.request_id << std::endl;
-    latest_params_.Set(/*version=*/params.request_id, params);
+    latest_params_.Set(params, /*version=*/params.request_id);
     crow::json::wvalue json({{"request_id", params.request_id}});
     return crow::response(json);
   }
@@ -32,7 +32,7 @@ class PipelinedHandler : public Handler {
   crow::response HandleFractalRequest(const FractalParams& params) {
     SetSessionId(params.session_id);
     std::cout << "HandleFractalRequest putting version: " << params.request_id << std::endl;
-    latest_params_.Set(/*version=*/params.request_id, params);
+    latest_params_.Set(params, /*version=*/params.request_id);
     std::cout << "HandleFractalRequest waiting for above version: " << params.last_data_id << std::endl;
     auto png = latest_png_.GetAboveVersion(params.last_data_id);
     if (!png.has_value()) {
@@ -40,12 +40,12 @@ class PipelinedHandler : public Handler {
       return crow::response(500);
     }
 
-    return ImageWithMetadata(*png.value(),
+    return ImageWithMetadata(**png,
 			     {{"data_id", png.version()},
 			      {"viewport_id", png.version()}});
   }
 
-private:
+ private:
   void Start() {
     latest_params_.Reset();
     latest_image_.Reset();
@@ -108,7 +108,7 @@ private:
       std::cout << "Computation time (ms): " << (end_time - start_time) << std::endl;
 
       // Push out the results.
-      latest_image_.Set(/*version=*/input.version(), std::make_pair(*input, image));
+      latest_image_.Set(std::make_pair(*input, image), /*version=*/input.version());
       previous_image = image;
       previous_params = *input;
       latest_version = input.version();
@@ -141,7 +141,7 @@ private:
       std::cout << "PNG encode time (ms): " << (end_time - start_time) << std::endl;
 
       // Push out the results.
-      latest_png_.Set(/*version=*/input.version(), png);
+      latest_png_.Set(png, /*version=*/input.version());
       latest_version = input.version();
       std::cout << "EncodeLoop done" << std::endl;
     }

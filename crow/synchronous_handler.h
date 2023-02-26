@@ -15,7 +15,7 @@ class SynchronousHandler : public Handler {
   explicit SynchronousHandler(ThreadPool* thread_pool) : thread_pool_(*thread_pool) {}
 
   crow::response HandleParamsRequest(const FractalParams& params) override {
-    // Just black-hole the request and respond with an ack.
+    // Just black-hole the params and respond with an ack.
     crow::json::wvalue json({{"request_id", params.request_id}});
     return crow::response(json);
   }

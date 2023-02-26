@@ -53,7 +53,7 @@ class SynchronizedResource {
     }
   }
 
-  bool Set(V version, const T& value) {
+  bool Set(const T& value, V version) {
     bool changed = false;
     {
       std::scoped_lock lock(m_);
