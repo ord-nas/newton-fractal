@@ -303,6 +303,10 @@ struct FractalParams {
     return fractal_params;
   }
 
+  double i_range() const {
+    return r_range / width * height;
+  }
+
   // Required args.
   std::string session_id;
   size_t request_id;

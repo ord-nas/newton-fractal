@@ -3,3 +3,6 @@
 
 # Crow binary
 crow/fractal_server
+
+# Resize test binary
+crow/resize_test

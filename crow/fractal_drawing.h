@@ -13,6 +13,7 @@
 #include "thread_pool.h"
 #include "task_group.h"
 #include "image_regions.h"
+#include "image_operations.h"
 #include "pixel_iterator.h"
 #include "development_utils.h"
 
@@ -49,22 +50,6 @@ bool HasActivePixels(const std::array<std::optional<PixelMetadata>, N>& metadata
     }
   }
   return false;
-}
-
-// Can likely be optimized, but not clear if necessary.
-void CopyImage(const RGBImage& from, RGBImage& to, const ImageOverlap& overlap) {
-  const uint64_t start_time = Now();
-  size_t from_y = overlap.a_region.y_min;
-  size_t to_y = overlap.b_region.y_min;
-  for (; from_y < overlap.a_region.y_max; ++from_y, ++to_y) {
-    size_t from_x = overlap.a_region.x_min;
-    size_t to_x = overlap.b_region.x_min;
-    for (; from_x < overlap.a_region.x_max; ++from_x, ++to_x) {
-      to[to_y][to_x] = from[from_y][from_x];
-    }
-  }
-  const uint64_t end_time = Now();
-  std::cout << "Copy time (ms): " << (end_time - start_time) << std::endl;
 }
 
 template <typename T>
@@ -187,11 +172,14 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
     return DynamicBlockThreadedDraw<T, N>(params, p, image, thread_pool);
   }
 
-  const ImageDelta delta = ComputeImageDelta<T>(*previous_params, params);
+  const ImageDelta delta = ComputePanOnlyImageDelta<T>(*previous_params, params);
   TaskGroup task_group(&thread_pool);
   if (delta.overlap.has_value()) {
     task_group.Add([previous_image, &image, delta]() {
+      const uint64_t start_time = Now();
       CopyImage(*previous_image, image, *delta.overlap);
+      const uint64_t end_time = Now();
+      std::cout << "Copy time (ms): " << (end_time - start_time) << std::endl;
     });
   }
 

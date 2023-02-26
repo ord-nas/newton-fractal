@@ -5,6 +5,8 @@
 #include <optional>
 #include <cmath>
 
+#include "fractal_params.h"
+
 struct ImageRect {
   // Both ranges are half-open, e.g. [x_min, x_max).
   size_t x_min;
@@ -53,7 +55,7 @@ struct ImageDelta {
 // This set of computations should assign exactly the same (r, i) values to each pixel
 // that PixelIterator would, ensuring no ugly seams from floating point error.
 template <typename T>
-std::optional<RangeOverlap> FindRangeOverlap(T a_min, T b_min, T step, size_t num_pixels) {
+std::optional<RangeOverlap> FindPanOnlyRangeOverlap(T a_min, T b_min, T step, size_t num_pixels) {
   const T start = std::min(a_min, b_min);
   const T end = std::max(a_min, b_min);
 
@@ -88,13 +90,13 @@ std::optional<RangeOverlap> FindRangeOverlap(T a_min, T b_min, T step, size_t nu
 }
 
 template <typename T>
-std::optional<ImageOverlap> FindImageOverlap(const FractalParams& a, const FractalParams& b) {
+std::optional<ImageOverlap> FindPanOnlyImageOverlap(const FractalParams& a, const FractalParams& b) {
   const size_t width = a.width;
   const size_t height = a.height;
   const T step = a.r_range / width;
 
-  std::optional<RangeOverlap> r_overlap = FindRangeOverlap<T>(a.r_min, b.r_min, step, width);
-  std::optional<RangeOverlap> i_overlap = FindRangeOverlap<T>(a.i_min, b.i_min, step, height);
+  std::optional<RangeOverlap> r_overlap = FindPanOnlyRangeOverlap<T>(a.r_min, b.r_min, step, width);
+  std::optional<RangeOverlap> i_overlap = FindPanOnlyRangeOverlap<T>(a.i_min, b.i_min, step, height);
   if (!r_overlap.has_value() || !i_overlap.has_value()) {
     return std::nullopt;
   }
@@ -118,9 +120,9 @@ std::optional<ImageOverlap> FindImageOverlap(const FractalParams& a, const Fract
 }
 
 template <typename T>
-ImageDelta ComputeImageDelta(const FractalParams& a, const FractalParams& b) {
+ImageDelta ComputePanOnlyImageDelta(const FractalParams& a, const FractalParams& b) {
   ImageDelta delta;
-  delta.overlap = FindImageOverlap<T>(a, b);
+  delta.overlap = FindPanOnlyImageOverlap<T>(a, b);
 
   // If there is no overlap, then the whole image is b_only.
   if (!delta.overlap.has_value()) {
@@ -168,6 +170,55 @@ ImageDelta ComputeImageDelta(const FractalParams& a, const FractalParams& b) {
       });
   }
   return delta;
+}
+
+size_t TransformAndClamp(size_t pixel, size_t image_dim,
+			 double from_float_range, double to_float_range,
+			 double from_float_min, double to_float_min) {
+  const double float_value = 1.0 * pixel / image_dim * from_float_range + from_float_min;
+  const double to_pixel = (float_value - to_float_min) / to_float_range * image_dim;
+  return (to_pixel < 0 ? 0 :
+	  to_pixel >= image_dim ? image_dim :
+	  static_cast<size_t>(to_pixel));
+}
+
+ImageRect TransformAndClamp(const ImageRect& from_rect,
+			    const FractalParams& from_params,
+			    const FractalParams& to_params) {
+  const size_t x_min = TransformAndClamp(from_rect.x_min, from_params.width,
+					 from_params.r_range, to_params.r_range,
+					 from_params.r_min, to_params.r_min);
+  const size_t x_max = TransformAndClamp(from_rect.x_max, from_params.width,
+					 from_params.r_range, to_params.r_range,
+					 from_params.r_min, to_params.r_min);
+  const size_t y_min = TransformAndClamp(from_rect.y_min, from_params.height,
+					 from_params.i_range(), to_params.i_range(),
+					 from_params.i_min, to_params.i_min);
+  const size_t y_max = TransformAndClamp(from_rect.y_max, from_params.height,
+					 from_params.i_range(), to_params.i_range(),
+					 from_params.i_min, to_params.i_min);
+  return ImageRect{
+    .x_min = x_min,
+    .x_max = x_max,
+    .y_min = y_min,
+    .y_max = y_max,
+  };
+}
+
+std::optional<ImageOverlap> FindGeneralImageOverlap(const FractalParams& a,
+						    const FractalParams& b) {
+  const ImageRect a_entire_image = {
+    .x_min = 0,
+    .x_max = a.width,
+    .y_min = 0,
+    .y_max = a.height,
+  };
+  const ImageRect b_overlap = TransformAndClamp(a_entire_image, a, b);
+  const ImageRect a_overlap = TransformAndClamp(b_overlap, b, a);
+  return ImageOverlap{
+    .a_region = a_overlap,
+    .b_region = b_overlap,
+  };
 }
 
 #endif // _CROW_FRACTAL_SERVER_IMAGE_REGIONS_
