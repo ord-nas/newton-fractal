@@ -29,6 +29,7 @@ enum class PngEncoder {
 enum class HandlerType {
   SYNCHRONOUS,
   PIPELINED,
+  ASYNCHRONOUS,
 };
 
 bool ParseNonEmptyString(const crow::query_string& url_params,
@@ -269,6 +270,9 @@ bool ParseHandlerType(const crow::query_string& url_params,
   } else if (s == "PIPELINED") {
     *output = HandlerType::PIPELINED;
     return true;
+  } else if (s == "ASYNCHRONOUS") {
+    *output = HandlerType::ASYNCHRONOUS;
+    return true;
   }
   return false;
 }
@@ -307,11 +311,13 @@ struct FractalParams {
     return r_range / width * height;
   }
 
-  // Required args.
+  // Request metadata.
   std::string session_id;
   size_t request_id;
   size_t last_data_id;
   size_t last_viewport_id;
+
+  // Required args.
   double i_min;
   double r_min;
   double r_range;
@@ -354,6 +360,15 @@ bool AllEqual(const std::vector<T>& a, const std::vector<T>& b) {
 bool ParamsDifferOnlyByPanning(const FractalParams& a, const FractalParams& b) {
   return (a.r_range == b.r_range &&
 	  a.width == b.width &&
+	  a.height == b.height &&
+	  a.max_iters == b.max_iters &&
+	  AllEqual(a.zeros, b.zeros) &&
+	  AllEqual(a.colors, b.colors) &&
+	  a.precision == b.precision);
+}
+
+bool ParamsDifferOnlyByViewport(const FractalParams& a, const FractalParams& b) {
+  return (a.width == b.width &&
 	  a.height == b.height &&
 	  a.max_iters == b.max_iters &&
 	  AllEqual(a.zeros, b.zeros) &&

@@ -42,7 +42,7 @@ struct RangeOverlap {
   size_t extent;
 };
 
-// The delta between two images that differ only by panning.
+// The delta between two images.
 struct ImageDelta {
   // The region of overlap between the two images, if any.
   std::optional<ImageOverlap> overlap;
@@ -172,11 +172,23 @@ ImageDelta ComputePanOnlyImageDelta(const FractalParams& a, const FractalParams&
   return delta;
 }
 
-size_t TransformAndClamp(size_t pixel, size_t image_dim,
-			 double from_float_range, double to_float_range,
-			 double from_float_min, double to_float_min) {
+size_t TransformAndClampX(size_t pixel, size_t image_dim,
+			  double from_float_range, double to_float_range,
+			  double from_float_min, double to_float_min) {
   const double float_value = 1.0 * pixel / image_dim * from_float_range + from_float_min;
   const double to_pixel = (float_value - to_float_min) / to_float_range * image_dim;
+  return (to_pixel < 0 ? 0 :
+	  to_pixel >= image_dim ? image_dim :
+	  static_cast<size_t>(to_pixel));
+}
+
+size_t TransformAndClampY(size_t pixel, size_t image_dim,
+			  double from_float_range, double to_float_range,
+			  double from_float_min, double to_float_min) {
+  const double from_float_max = from_float_min + from_float_range;
+  const double to_float_max = to_float_min + to_float_range;
+  const double float_value = from_float_max - 1.0 * pixel / image_dim * from_float_range;
+  const double to_pixel = (to_float_max - float_value) / to_float_range * image_dim;
   return (to_pixel < 0 ? 0 :
 	  to_pixel >= image_dim ? image_dim :
 	  static_cast<size_t>(to_pixel));
@@ -185,18 +197,18 @@ size_t TransformAndClamp(size_t pixel, size_t image_dim,
 ImageRect TransformAndClamp(const ImageRect& from_rect,
 			    const FractalParams& from_params,
 			    const FractalParams& to_params) {
-  const size_t x_min = TransformAndClamp(from_rect.x_min, from_params.width,
-					 from_params.r_range, to_params.r_range,
-					 from_params.r_min, to_params.r_min);
-  const size_t x_max = TransformAndClamp(from_rect.x_max, from_params.width,
-					 from_params.r_range, to_params.r_range,
-					 from_params.r_min, to_params.r_min);
-  const size_t y_min = TransformAndClamp(from_rect.y_min, from_params.height,
-					 from_params.i_range(), to_params.i_range(),
-					 from_params.i_min, to_params.i_min);
-  const size_t y_max = TransformAndClamp(from_rect.y_max, from_params.height,
-					 from_params.i_range(), to_params.i_range(),
-					 from_params.i_min, to_params.i_min);
+  const size_t x_min = TransformAndClampX(from_rect.x_min, from_params.width,
+					  from_params.r_range, to_params.r_range,
+					  from_params.r_min, to_params.r_min);
+  const size_t x_max = TransformAndClampX(from_rect.x_max, from_params.width,
+					  from_params.r_range, to_params.r_range,
+					  from_params.r_min, to_params.r_min);
+  const size_t y_min = TransformAndClampY(from_rect.y_min, from_params.height,
+					  from_params.i_range(), to_params.i_range(),
+					  from_params.i_min, to_params.i_min);
+  const size_t y_max = TransformAndClampY(from_rect.y_max, from_params.height,
+					  from_params.i_range(), to_params.i_range(),
+					  from_params.i_min, to_params.i_min);
   return ImageRect{
     .x_min = x_min,
     .x_max = x_max,
@@ -215,6 +227,11 @@ std::optional<ImageOverlap> FindGeneralImageOverlap(const FractalParams& a,
   };
   const ImageRect b_overlap = TransformAndClamp(a_entire_image, a, b);
   const ImageRect a_overlap = TransformAndClamp(b_overlap, b, a);
+
+  if (a_overlap.CountPixels() == 0 || b_overlap.CountPixels() == 0) {
+    return std::nullopt;
+  }
+
   return ImageOverlap{
     .a_region = a_overlap,
     .b_region = b_overlap,
