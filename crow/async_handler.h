@@ -14,11 +14,29 @@
 #include "synchronized_resource.h"
 #include "image_regions.h"
 #include "image_operations.h"
+#include "breadcrumb_trail.h"
 
 std::shared_ptr<RGBImage> LayoutImage(const RGBImage& input_image,
 				      const FractalParams& image_params,
-				      const FractalParams& viewport_params) {
+				      const FractalParams& viewport_params,
+				      BreadcrumbTrail& breadcrumbs) {
   auto output_image = std::make_shared<RGBImage>(viewport_params.width, viewport_params.height);
+
+  // If we're zooming out, use the breadcrumbs.
+  if (viewport_params.r_range > image_params.r_range) {
+    const auto crumb = breadcrumbs.GetNextLargest(viewport_params);
+    if (crumb.has_value()) {
+      const auto& [crumb_params, crumb_image] = *crumb;
+      const std::optional<ImageOverlap> crumb_overlap =
+	FindGeneralImageOverlap(crumb_params, viewport_params);
+      if (crumb_overlap.has_value()) {
+	ResizeBilinear(*crumb_image, *output_image, *crumb_overlap);
+	return output_image;
+      }
+    }
+  }
+
+  // If we're not zooming out or breadcrumbs didn't work, use the previous image.
   const std::optional<ImageOverlap> overlap = FindGeneralImageOverlap(image_params, viewport_params);
   if (overlap.has_value()) {
     ResizeBilinear(input_image, *output_image, *overlap);
@@ -28,7 +46,9 @@ std::shared_ptr<RGBImage> LayoutImage(const RGBImage& input_image,
 
 class AsyncHandler : public Handler {
  public:
-  explicit AsyncHandler(ThreadPool* thread_pool) : thread_pool_(*thread_pool) {
+  explicit AsyncHandler(ThreadPool* thread_pool)
+    : thread_pool_(*thread_pool),
+      breadcrumbs_(/*max_elements=*/50, /*bucket_size=*/2.0) {
     Start();
   }
 
@@ -81,6 +101,7 @@ class AsyncHandler : public Handler {
   }
 
   void Stop() {
+    breadcrumbs_.Clear();
     latest_params_and_image_.Kill();
     latest_png_.Kill();
     computation_thread_->join();
@@ -141,7 +162,9 @@ class AsyncHandler : public Handler {
       std::cout << "Computation time (ms): " << (end_time - start_time) << std::endl;
 
       // Push out the results.
-      latest_image().Set(std::make_pair(*input, image),
+      const auto params_and_image = std::make_pair(*input, image);
+      breadcrumbs_.Insert(params_and_image);
+      latest_image().Set(params_and_image,
 			 /*version=*/input.version());
       previous_image = image;
       previous_params = *input;
@@ -236,7 +259,7 @@ class AsyncHandler : public Handler {
     if (ParamsDifferOnlyByViewport(viewport_params, image_params)) {
       std::cout << "Params differ only by viewport, performing layout." << std::endl;
       const uint64_t start_time = Now();
-      auto stitched_image = LayoutImage(*image, image_params, viewport_params);
+      auto stitched_image = LayoutImage(*image, image_params, viewport_params, breadcrumbs_);
       const uint64_t end_time = Now();
       std::cout << "Layout time (ms): " << (end_time - start_time) << std::endl;
       return EncodeInput{
@@ -275,6 +298,8 @@ class AsyncHandler : public Handler {
 				     std::shared_ptr<RGBImage>>>
       latest_params_and_image_;
   SynchronizedResource<std::shared_ptr<std::string>, ImageVersion> latest_png_;
+
+  BreadcrumbTrail breadcrumbs_;
 };
 
 #endif // _CROW_FRACTAL_SERVER_ASYNC_HANDLER_
