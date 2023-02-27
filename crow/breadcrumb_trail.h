@@ -35,7 +35,7 @@ class BreadcrumbTrail {
     elements_.erase(elements_.begin(), it);
 
     // Shrink to be within max size.
-    if (elements_.size() > max_elements_) {
+    while (elements_.size() > max_elements_) {
       auto it = elements_.end();
       --it;
       elements_.erase(it);
