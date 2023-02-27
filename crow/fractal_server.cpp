@@ -62,10 +62,14 @@ int main() {
 
   fpng::fpng_init();
 
-  // Using 8 threads (since we have 8 logical CPUs) even though there are only 4
-  // physical cores. Experiments seem to show that 8 is slightly faster
-  // (although not 2x faster) than 4.
-  ThreadPool thread_pool(/*num_threads=*/8);
+  // Using 8-1 threads (since we have 8 logical CPUs) even though there are only
+  // 4 physical cores. Experiments seem to show that 8 is slightly faster
+  // (although not 2x faster) than 4. We subtract 1 because this leaves us on
+  // average one core to handle non-thread-pool tasks. This seems to be
+  // especially important when running in bash-on-windows - in that setting,
+  // having 8 threads in the pool can cause noticeable hiccups in other tasks,
+  // which can make everything jerky.
+  ThreadPool thread_pool(/*num_threads=*/7);
   HandlerGroup handlers(&thread_pool);
 
   crow::SimpleApp app; //define your crow application

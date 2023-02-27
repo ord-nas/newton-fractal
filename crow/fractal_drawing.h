@@ -52,6 +52,39 @@ bool HasActivePixels(const std::array<std::optional<PixelMetadata>, N>& metadata
   return false;
 }
 
+std::vector<ImageRect> SplitIntoTasks(const std::vector<ImageRect>& input, int num_threads) {
+  size_t total_pixels = 0;
+  for (const ImageRect& region : input) {
+    total_pixels += region.CountPixels();
+  }
+
+  constexpr size_t desired_pixels_per_task = 25 * 2000; // TUNE.
+  const size_t desired_pixels_per_split = desired_pixels_per_task * num_threads;
+  size_t splits = std::ceil(1.0 * total_pixels / desired_pixels_per_split);
+  if (splits == 0) splits = 1;
+  const size_t tasks = splits * num_threads;
+  const double pixels_per_task = 1.0 * total_pixels / tasks;
+
+  std::vector<ImageRect> output;
+  for (const ImageRect& region : input) {
+    size_t region_tasks = region.CountPixels() / pixels_per_task;
+    if (region_tasks == 0) region_tasks = 1;
+    double rows_per_task = 1.0 * region.height() / region_tasks;
+    if (rows_per_task < 1.0) rows_per_task = 1.0;
+    for (double row = region.y_min; row + 0.5 < region.y_max; row += rows_per_task) {
+      const size_t start_row = row + 0.5;
+      const size_t end_row = row + rows_per_task + 0.5;
+      output.push_back({
+	  .x_min = region.x_min,
+	  .x_max = region.x_max,
+	  .y_min = start_row,
+	  .y_max = end_row,
+	});
+    }
+  }
+  return output;
+}
+
 template <typename T>
 size_t NaiveDraw(const FractalParams& params, const AnalyzedPolynomial<T>& p, RGBImage& image) {
   size_t total_iters = 0;
@@ -138,7 +171,7 @@ size_t DynamicBlockDraw(const FractalParams& params, const AnalyzedPolynomial<T>
 template <typename T, size_t N>
 size_t DynamicBlockThreadedDraw(const FractalParams& params, const AnalyzedPolynomial<T>& p, RGBImage& image, ThreadPool& thread_pool) {
   TaskGroup task_group(&thread_pool);
-  constexpr size_t rows_per_task = 50; //48;
+  constexpr size_t rows_per_task = 50; // TUNE.
   std::mutex m;
   size_t total_iters = 0;
   for (size_t start_row = 0; start_row < params.height; start_row += rows_per_task) {
@@ -183,37 +216,19 @@ size_t DynamicBlockThreadedIncrementalDraw(const FractalParams& params,
     });
   }
 
-  // TODO: when computation is quite expensive, this can be too many pixels per
-  // task. This results in us not scheduling enough tasks, and we underutilize
-  // our thread pool. Maybe we compute tasks_per_worker first, which must be an
-  // integer, and then split the work into num_workers * tasks_per_worker? That
-  // way, we never have idle workers. Would be better to actually estimate the
-  // amount of computation required per pixel though.
-  constexpr size_t desired_pixels_per_task = 50 * 2000; // TUNE
   std::mutex m;
   size_t total_iters = 0;
-  size_t num_tasks = 0;
-  for (const auto& region : delta.b_only) {
-    const size_t rows_per_task = desired_pixels_per_task / region.width();
-    for (size_t start_row = region.y_min; start_row < region.y_max; start_row += rows_per_task) {
-      const size_t end_row = std::min(start_row + rows_per_task, region.y_max);
-      const ImageRect rect = {
-	.x_min = region.x_min,
-	.x_max = region.x_max,
-	.y_min = start_row,
-	.y_max = end_row,
-      };
-      task_group.Add([rect, params, p,
-		      &image, &total_iters, &m]() {
-	size_t iters = FillRegionUsingDynamicBlocks<T, N>(params, p, rect, image);
-	std::scoped_lock lock(m);
-	total_iters += iters;
-      });
-      ++num_tasks;
-    }
+  const std::vector<ImageRect> tasks = SplitIntoTasks(delta.b_only, thread_pool.size());
+  for (const ImageRect& rect : tasks) {
+    task_group.Add([rect, params, p,
+		    &image, &total_iters, &m]() {
+      size_t iters = FillRegionUsingDynamicBlocks<T, N>(params, p, rect, image);
+      std::scoped_lock lock(m);
+      total_iters += iters;
+    });
   }
   task_group.WaitUntilDone();
-  std::cout << "Incremental draw used " << num_tasks << " tasks" << std::endl;
+  std::cout << "Incremental draw used " << tasks.size() << " tasks" << std::endl;
   return total_iters;
 }
 

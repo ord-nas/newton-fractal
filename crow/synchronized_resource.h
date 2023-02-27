@@ -4,6 +4,7 @@
 #include <optional>
 #include <mutex>
 #include <condition_variable>
+#include <chrono>
 
 template <typename T, typename V = uint64_t>
 struct VersionedResource {
@@ -69,6 +70,26 @@ class SynchronizedResourceBase {
     }
     if (!still_alive) {
       return {.resource = std::nullopt, .still_alive = false};
+    } else {
+      return {.resource = resource_, .still_alive = true};
+    }
+  }
+
+  template<typename Rep, typename Period>
+  MaybeResource<T, V> GetAtVersionWithTimeout(V version,
+					      std::chrono::duration<Rep, Period> timeout) {
+    const auto now = std::chrono::system_clock::now();
+    const auto deadline = now + timeout;
+    bool deadline_expired = false;
+    std::unique_lock lock(sync_.m);
+    while (still_alive && !deadline_expired && (!resource_.has_value() ||
+						resource_->version < version)) {
+      deadline_expired = (sync_.cv.wait_until(lock, deadline) == std::cv_status::timeout);
+    }
+    if (!still_alive) {
+      return {.resource = std::nullopt, .still_alive = false};
+    } else if (deadline_expired) {
+      return {.resource = std::nullopt, .still_alive = true};
     } else {
       return {.resource = resource_, .still_alive = true};
     }

@@ -1,6 +1,8 @@
 #ifndef _CROW_FRACTAL_SERVER_ASYNC_HANDLER_
 #define _CROW_FRACTAL_SERVER_ASYNC_HANDLER_
 
+#include <chrono>
+
 #include <crow.h>
 
 #include "handler.h"
@@ -37,7 +39,7 @@ class AsyncHandler : public Handler {
   crow::response HandleParamsRequest(const FractalParams& params) override {
     SetSessionId(params.session_id);
     std::cout << "HandleParamsRequest putting version: " << params.request_id << std::endl;
-    latest_params_and_image_.first().Set(params, /*version=*/params.request_id);
+    latest_params().Set(params, /*version=*/params.request_id);
     crow::json::wvalue json({{"request_id", params.request_id}});
     return crow::response(json);
   }
@@ -45,7 +47,7 @@ class AsyncHandler : public Handler {
   crow::response HandleFractalRequest(const FractalParams& params) {
     SetSessionId(params.session_id);
     std::cout << "HandleFractalRequest putting version: " << params.request_id << std::endl;
-    latest_params_and_image_.first().Set(params, /*version=*/params.request_id);
+    latest_params().Set(params, /*version=*/params.request_id);
     std::cout << "HandleFractalRequest waiting for above version: ("
 	      << params.last_data_id << ", "
 	      << params.last_viewport_id << ")" << std::endl;
@@ -64,6 +66,12 @@ class AsyncHandler : public Handler {
  private:
   // first is data version, second is viewport version.
   using ImageVersion = std::pair<uint64_t, uint64_t>;
+
+  struct EncodeInput {
+    std::shared_ptr<RGBImage> image;
+    FractalParams image_params;
+    FractalParams viewport_params;
+  };
 
   void Start() {
     latest_params_and_image_.Reset();
@@ -91,6 +99,14 @@ class AsyncHandler : public Handler {
     session_id_ = new_id;
   }
 
+  SynchronizedResourceBase<FractalParams>& latest_params() {
+    return latest_params_and_image_.first();
+  }
+
+  SynchronizedResourceBase<std::pair<FractalParams, std::shared_ptr<RGBImage>>>& latest_image() {
+    return latest_params_and_image_.second();
+  }
+
   void ComputeLoop() {
     uint64_t latest_version = 0;
     std::optional<FractalParams> previous_params = std::nullopt;
@@ -98,7 +114,7 @@ class AsyncHandler : public Handler {
 
     while (true) {
       std::cout << "ComputeLoop start, waiting for above version: " << latest_version << std::endl;
-      auto input = latest_params_and_image_.first().GetAboveVersion(latest_version);
+      auto input = latest_params().GetAboveVersion(latest_version);
       if (!input.has_value()) {
 	std::cout << "Killing AsyncHandler::ComputeLoop, params are dead" << std::endl;
 	return;
@@ -125,13 +141,12 @@ class AsyncHandler : public Handler {
       std::cout << "Computation time (ms): " << (end_time - start_time) << std::endl;
 
       // Push out the results.
-      latest_params_and_image_.second().Set(std::make_pair(*input, image),
-					    /*version=*/input.version());
+      latest_image().Set(std::make_pair(*input, image),
+			 /*version=*/input.version());
       previous_image = image;
       previous_params = *input;
       latest_version = input.version();
       std::cout << "ComputeLoop done" << std::endl;
-      // return; // FIXME
     }
   }
 
@@ -144,67 +159,108 @@ class AsyncHandler : public Handler {
 		<< latest_viewport_version << " or image above version "
 		<< latest_data_version << std::endl;
 
-      // Get new params.
-      auto [viewport_input, image_input] =
-	latest_params_and_image_.GetBothWithAtLeastOneAboveVersion(latest_viewport_version,
-								   latest_data_version);
-      if (!viewport_input.has_value()) {
-	std::cout << "Killing AsyncHandler::LayoutLoop, params are dead" << std::endl;
+      const auto encode_input = ComputeEncodeInput(latest_data_version, latest_viewport_version);
+      if (!encode_input.has_value()) {
+	// We've been killed.
 	return;
-      }
-      if (!image_input.has_value()) {
-	std::cout << "Killing AsyncHandler::LayoutLoop, image is dead" << std::endl;
-	return;
-      }
-
-      FractalParams viewport_params = *viewport_input;
-      std::cout << "LayoutLoop got viewport params at version: "
-		<< viewport_input.version() << std::endl;
-
-      auto [image_params, image] = *image_input;
-      std::cout << "LayoutLoop got image at version: "
-		<< image_input.version() << std::endl;
-
-      // Now we do different things depending on the versions and params we got.
-      std::shared_ptr<RGBImage> image_to_encode;
-      if (viewport_input.version() == image_input.version()) {
-	std::cout << "Versions identical, no layout required." << std::endl;
-	image_to_encode = image;
-      } else if (ParamsDifferOnlyByViewport(viewport_params, image_params)) {
-	std::cout << "Params differ only by viewport, performing layout." << std::endl;
-	const uint64_t start_time = Now();
-	image_to_encode = LayoutImage(*image, image_params, viewport_params);
-	const uint64_t end_time = Now();
-	std::cout << "Layout time (ms): " << (end_time - start_time) << std::endl;
-      } else {
-	// Fall back on pipelined behaviour.
-	std::cout << "Fundamental param change, reverting to pipelined behavior." << std::endl;
-	image_input = latest_params_and_image_.second().GetAboveVersion(latest_data_version);
-	if (!image_input.has_value()) {
-	  std::cout << "Killing AsyncHandler::LayoutLoop, image is dead" << std::endl;
-	  return;
-	}
-	std::cout << "LayoutLoop got fallback image at version: "
-		  << image_input.version() << std::endl;
-	std::tie(image_params, image) = *image_input;
-	viewport_params = image_params;
-	image_to_encode = image;
       }
 
       // Encode to PNG.
       const uint64_t start_time = Now();
       auto png = std::make_shared<std::string>();
-      *png = EncodePng(viewport_params, *image_to_encode);
+      *png = EncodePng(encode_input->viewport_params, *encode_input->image);
       const uint64_t end_time = Now();
       std::cout << "PNG encode time (ms): " << (end_time - start_time) << std::endl;
 
       // Push out the results.
-      latest_data_version = image_params.request_id;
-      latest_viewport_version = viewport_params.request_id;
+      latest_data_version = encode_input->image_params.request_id;
+      latest_viewport_version = encode_input->viewport_params.request_id;
       latest_png_.Set(png, /*version=*/std::make_pair(latest_data_version,
 						      latest_viewport_version));
       std::cout << "LayoutLoop done" << std::endl;
     }
+  }
+
+  std::optional<EncodeInput> ComputeEncodeInput(uint64_t latest_data_version,
+						uint64_t latest_viewport_version) {
+    using namespace std::chrono_literals;
+
+    // Get new params.
+    auto [viewport_input, image_input] =
+      latest_params_and_image_.GetBothWithAtLeastOneAboveVersion(latest_viewport_version,
+								 latest_data_version);
+    if (!viewport_input.has_value()) {
+      std::cout << "Killing AsyncHandler::LayoutLoop, params are dead" << std::endl;
+      return std::nullopt;
+    }
+    if (!image_input.has_value()) {
+      std::cout << "Killing AsyncHandler::LayoutLoop, image is dead" << std::endl;
+      return std::nullopt;
+    }
+
+    // Pull out the retrieved input.
+    FractalParams viewport_params = *viewport_input;
+    std::cout << "LayoutLoop got viewport params at version: "
+	      << viewport_input.version() << std::endl;
+    auto [image_params, image] = *image_input;
+    std::cout << "LayoutLoop got image at version: "
+	      << image_input.version() << std::endl;
+
+    // If the image and viewport versions are identical, no need to do any work.
+    if (image_params.request_id == viewport_params.request_id) {
+      std::cout << "Versions identical, no layout required." << std::endl;
+      return EncodeInput{
+	.image = image,
+	.image_params = image_params,
+	.viewport_params = viewport_params,
+      };
+    }
+
+    // If the viewport is only panned, then give the compute loop a bit of extra
+    // time to catch up, since it might not be long.
+    if (ParamsDifferOnlyByPanning(viewport_params, image_params)) {
+      std::cout << "Versions differ only by panning, try wait." << std::endl;
+      auto updated_image = latest_image().GetAtVersionWithTimeout(viewport_params.request_id, 50ms);
+      if (updated_image.has_value()) {
+	std::cout << "Wait success!" << std::endl;
+	auto [new_params, new_image] = *updated_image;
+	return EncodeInput{
+	  .image = new_image,
+	  .image_params = new_params,
+	  .viewport_params = new_params,
+	};
+      }
+    }
+
+    // If the params differ only by viewport, take the latest image and just adjust for viewport change.
+    if (ParamsDifferOnlyByViewport(viewport_params, image_params)) {
+      std::cout << "Params differ only by viewport, performing layout." << std::endl;
+      const uint64_t start_time = Now();
+      auto stitched_image = LayoutImage(*image, image_params, viewport_params);
+      const uint64_t end_time = Now();
+      std::cout << "Layout time (ms): " << (end_time - start_time) << std::endl;
+      return EncodeInput{
+	.image = stitched_image,
+	.image_params = image_params,
+	.viewport_params = viewport_params,
+      };
+    }
+
+    // Fall back on pipelined behaviour... wait for a usable image to be available.
+    std::cout << "Fundamental param change, reverting to pipelined behavior." << std::endl;
+    image_input = latest_image().GetAboveVersion(latest_data_version);
+    if (!image_input.has_value()) {
+      std::cout << "Killing AsyncHandler::LayoutLoop, image is dead" << std::endl;
+      return std::nullopt;
+    }
+    auto [new_params, new_image] = *image_input;
+    std::cout << "LayoutLoop got fallback image at version: "
+	      << image_input.version() << std::endl;
+    return EncodeInput{
+      .image = new_image,
+      .image_params = new_params,
+      .viewport_params = new_params,
+    };
   }
 
   // Unowned.

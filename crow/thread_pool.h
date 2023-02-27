@@ -7,7 +7,8 @@
 
 class ThreadPool {
  public:
-  explicit ThreadPool(size_t num_threads) : work_(io_service_) {
+  explicit ThreadPool(size_t num_threads)
+    : work_(io_service_), size_(num_threads) {
     for (size_t i = 0; i < num_threads; ++i) {
       auto* thread = new boost::thread(boost::bind(&boost::asio::io_service::run,
 						   &io_service_));
@@ -38,6 +39,10 @@ class ThreadPool {
     }
   }
 
+  size_t size() const {
+    return size_;
+  }
+
   template <typename F>
   void Queue(F f) {
     // Post the task.
@@ -53,6 +58,7 @@ class ThreadPool {
   boost::asio::io_service io_service_;
   boost::asio::io_service::work work_;
   boost::thread_group threads_;
+  size_t size_;
 };
 
 #endif // _CROW_FRACTAL_SERVER_THREAD_POOL_
