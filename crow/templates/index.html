@@ -21,6 +21,14 @@
              object-fit: none;
              z-index: 1;
          }
+         #edit_zero fieldset {
+             padding:0;
+             border:0;
+             margin-top:10px;
+         }
+         .destructive {
+             background: #ff6e6e;
+         }
         </style>
         <script>
          var events = [];
@@ -314,6 +322,10 @@
                  canvas.addEventListener("mouseup", (event) => this.mouseup(event));
                  canvas.addEventListener("mousemove", (event) => this.mousemove(event));
                  canvas.addEventListener("wheel", (event) => this.wheel(event));
+                 canvas.addEventListener("contextmenu", (event) => {
+                     event.stopPropagation();
+                     event.preventDefault();
+                 });
 
                  // Callbacks when state changes.
                  this.callbacks = [];
@@ -389,22 +401,84 @@
                  }
              }
 
-             mousedown(event) {
-                 this.last_pixels = null;
-                 this.zero_index = null;
-
-                 var pixels = this.get_pixels(event);
+             get_zero_index(pixels) {
                  for (var i = 0; i < this.zeros.length; i += 1) {
                      // Get the location of this zero.
                      var center = this.complex_to_pixels(this.zeros[i].r, this.zeros[i].i);
                      // Check if we're close enough to this zero.
                      if ((center.x - pixels.x)**2 + (center.y - pixels.y)**2 <= 100) {
-                         this.zero_index = i;
-                         return;
+                         return i;
                      }
                  }
+                 return null;
+             }
 
-                 this.last_pixels = pixels;
+             mousedown(event) {
+                 if (event.which == 3) {
+                     this.right_click(event);
+                 } else {
+                     this.left_click(event);
+                 }
+             }
+
+             right_click(event) {
+                 var pixels = this.get_pixels(event);
+                 var zero_index = this.get_zero_index(pixels);
+                 if (zero_index === null) {
+                     return;
+                 }
+
+                 var color_picker = document.getElementById("zero_colour");
+                 var zero = this.zeros[zero_index];
+                 var red = zero.red.toString(16).padStart(2, '0');
+                 var green = zero.green.toString(16).padStart(2, '0');
+                 var blue = zero.blue.toString(16).padStart(2, '0');
+                 color_picker.value = `#${red}${green}${blue}`;
+                 color_picker.dataset.zero_index = zero_index;
+                 console.log(`#${red}${green}${blue}`);
+
+                 var self = this;
+                 var dialog = $("#edit_zero");
+                 dialog.dialog({
+                     position: {
+                         my: "center",
+                         at: "center",
+                         of: event,
+                         collision: "fit",
+                     },
+                     buttons: [
+                         {
+                             text: "Delete",
+                             class: "destructive",
+                             click: function() {
+                                 var zeros = self.get_zeros();
+                                 if (zeros.length > 1) {
+                                     zeros.splice(zero_index, 1);
+                                     self.set_zeros(zeros);
+                                 }
+                                 dialog.dialog("close");
+                             }
+                         },
+                         {
+                             text: "Done",
+                             click: () => {dialog.dialog("close");},
+                         },
+                     ],
+                 });
+                 dialog.dialog("open");
+             }
+
+             left_click(event) {
+                 this.last_pixels = null;
+                 this.zero_index = null;
+
+                 var pixels = this.get_pixels(event);
+                 var zero_index = this.get_zero_index(pixels);
+                 if (zero_index !== null) {
+                     this.zero_index = zero_index;
+                 } else {
+                     this.last_pixels = pixels;
+                 }
              }
 
              mouseup(event) {
@@ -456,7 +530,7 @@
              }
 
              get_zeros(zeros) {
-                 return this.zeros;
+                 return JSON.parse(JSON.stringify(this.zeros));
              }
 
              add_callback(callback) {
@@ -535,6 +609,34 @@
              document.getElementById("png_encoder").addEventListener("input", () => requester.on_change());
              document.getElementById("handler").addEventListener("input", () => requester.on_change());
 
+             $("#edit_zero").dialog({
+                 autoOpen: false,
+                 height: 175,
+                 width: 250,
+                 modal: false,
+             });
+
+             $(".ui-dialog").on("contextmenu", function(event) {
+                 event.stopPropagation();
+                 event.preventDefault();
+             });
+
+             document.getElementById("zero_colour").addEventListener("input", function() {
+                 var zero_index = this.dataset.zero_index;
+                 if (zero_index === null || zero_index === undefined) {
+                     return;
+                 }
+                 var hex = this.value;
+                 var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                 if (result) {
+                     var zeros = tracker.get_zeros();
+                     zeros[zero_index].red = parseInt(result[1], 16);
+                     zeros[zero_index].green = parseInt(result[2], 16);
+                     zeros[zero_index].blue = parseInt(result[3], 16);
+                     tracker.set_zeros(zeros);
+                 }
+             });
+
              // Force an initial request.
              requester.on_change();
          }
@@ -590,5 +692,14 @@
         </p>
         <p><button id="random_colors">Randomize Colors</button></p>
         <p id="fps">FPS: ???</p>
+
+        <div id="edit_zero" title="Edit Zero">
+	    <form>
+		<fieldset>
+                    <input type="color" id="zero_colour" value="#ff0000" style="width:200px;">
+		</fieldset>
+	    </form>
+	</div>
+
     </body>
 </html>
