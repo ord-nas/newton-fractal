@@ -424,10 +424,14 @@
              right_click(event) {
                  var pixels = this.get_pixels(event);
                  var zero_index = this.get_zero_index(pixels);
-                 if (zero_index === null) {
-                     return;
+                 if (zero_index !== null) {
+                     this.edit_zero(zero_index);
+                 } else {
+                     this.create_zero(event);
                  }
+             }
 
+             edit_zero(zero_index) {
                  var color_picker = document.getElementById("zero_colour");
                  var zero = this.zeros[zero_index];
                  var red = zero.red.toString(16).padStart(2, '0');
@@ -435,7 +439,6 @@
                  var blue = zero.blue.toString(16).padStart(2, '0');
                  color_picker.value = `#${red}${green}${blue}`;
                  color_picker.dataset.zero_index = zero_index;
-                 console.log(`#${red}${green}${blue}`);
 
                  var self = this;
                  var dialog = $("#edit_zero");
@@ -466,6 +469,13 @@
                      ],
                  });
                  dialog.dialog("open");
+             }
+
+             create_zero(event) {
+                 var zero = random_color();
+                 Object.assign(zero, this.get_complex(event));
+                 this.zeros.push(zero);
+                 this.set_zeros(this.zeros);
              }
 
              left_click(event) {
