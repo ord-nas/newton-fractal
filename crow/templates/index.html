@@ -11,6 +11,13 @@
              grid-column: 1 / 1;
              grid-row: 1 / 1;
          }
+         #overlay {
+             z-index: 2;
+         }
+         #fractal {
+             object-fit: none;
+             z-index: 1;
+         }
         </style>
         <script>
          var cycling = false;
@@ -64,13 +71,10 @@
          }
 
          class FractalRequester {
-             constructor(image, width, height) {
+             constructor(image, tracker) {
                  this.image = image;
-                 this.current_params = {
-                     width: width,
-                     height: height,
-                     max_iters: 100,
-                 };
+                 this.tracker = tracker;
+                 this.current_params = this.get_current_params();;
                  this.session_id = random_string(32);
                  this.current_request_id = 1;
                  this.last_fractal_data_id = null;
@@ -81,22 +85,58 @@
                  this.last_params_request_time = null;
                  this.pending_fractal_request = null;
                  this.last_fractal_request_time = null;
+
+                 // Add a callback to the tracker.
+                 var self = this;
+                 tracker.add_callback(() => self.on_change());
+
+                 // Make sure this object gets a tick every frame.
+                 const tick_callback = function() {
+                     self.tick();
+                     window.requestAnimationFrame(tick_callback);
+                 }
+                 window.requestAnimationFrame(tick_callback);
              }
 
-             view_state_changed(new_state) {
-                 // Pull out viewport params.
-                 this.current_params.i_min = new_state.viewport.i_min;
-                 this.current_params.r_min = new_state.viewport.r_min;
-                 this.current_params.r_range = new_state.viewport.r_range;
-
-                 // Pull out zero params.
-                 this.current_params.zero_rs = new_state.zeros.map((z) => z.r);
-                 this.current_params.zero_is = new_state.zeros.map((z) => z.i);
-                 this.current_params.zero_reds = new_state.zeros.map((z) => z.red);
-                 this.current_params.zero_greens = new_state.zeros.map((z) => z.green);
-                 this.current_params.zero_blues = new_state.zeros.map((z) => z.blue);
-
+             on_change() {
+                 this.current_params = this.get_current_params();
                  this.maybe_fractal_request();
+             }
+
+             get_max_iters() {
+                 var element = document.getElementById("max_iters");
+                 var value = element.valueAsNumber;
+                 if (!isFinite(value)) {
+                     return element.max;
+                 } else {
+                     return Math.min(element.max, Math.max(element.min, value));
+                 }
+             }
+
+             get_current_params() {
+                 var tracker_state = this.tracker.get_state();
+                 return {
+                     // Viewport params.
+                     width: this.image.width,
+                     height: this.image.height,
+                     i_min: tracker_state.viewport.i_min,
+                     r_min: tracker_state.viewport.r_min,
+                     r_range: tracker_state.viewport.r_range,
+
+                     // Zero params.
+                     zero_rs: tracker_state.zeros.map((z) => z.r),
+                     zero_is: tracker_state.zeros.map((z) => z.i),
+                     zero_reds: tracker_state.zeros.map((z) => z.red),
+                     zero_greens: tracker_state.zeros.map((z) => z.green),
+                     zero_blues: tracker_state.zeros.map((z) => z.blue),
+
+                     // Options.
+                     max_iters: this.get_max_iters(),
+                     strategy: document.getElementById("strategy").value,
+                     precision: document.getElementById("precision").value,
+                     png_encoder: document.getElementById("png_encoder").value,
+                     handler: document.getElementById("handler").value,
+                 };
              }
 
              max_iters_changed(max_iters) {
@@ -126,11 +166,6 @@
                  param_array.push(["last_viewport_id",
                                    this.last_fractal_viewport_id == null ?
                                    0 : this.last_fractal_viewport_id]);
-                 // Dump in other UI options.
-                 param_array.push(["strategy", document.getElementById("strategy").value]);
-                 param_array.push(["precision", document.getElementById("precision").value]);
-                 param_array.push(["png_encoder", document.getElementById("png_encoder").value]);
-                 param_array.push(["handler", document.getElementById("handler").value]);
                  return new URLSearchParams(param_array);
              }
 
@@ -230,25 +265,23 @@
                          'Content-Type': 'application/x-www-form-urlencoded'
                      },
                      body: url_params,
-                 })
-                     .then((response) => {
-                         return response.formData();
-                     })
-                     .then((form_data) => {
-                         var metadata = JSON.parse(form_data.get("metadata"));
-                         console.log("Fractal response", metadata);
-                         this.last_fractal_data_id = metadata["data_id"];
-                         this.last_fractal_viewport_id = metadata["viewport_id"];
-                         this.last_fractal_elapsed_time = Date.now() - this.last_fractal_request_time;
-                         this.pending_fractal_request = null;
-                         var blob = form_data.get("fractal_image");
-                         const objectURL = URL.createObjectURL(blob);
-                         var old_url = this.image.src;
-                         this.image.src = objectURL;
-                         URL.revokeObjectURL(old_url);
-                         this.maybe_fractal_request();
-                         compute_fps();
-                     });
+                 }).then((response) => {
+                     return response.formData();
+                 }).then((form_data) => {
+                     var metadata = JSON.parse(form_data.get("metadata"));
+                     console.log("Fractal response", metadata);
+                     this.last_fractal_data_id = metadata["data_id"];
+                     this.last_fractal_viewport_id = metadata["viewport_id"];
+                     this.last_fractal_elapsed_time = Date.now() - this.last_fractal_request_time;
+                     this.pending_fractal_request = null;
+                     var blob = form_data.get("fractal_image");
+                     const objectURL = URL.createObjectURL(blob);
+                     var old_url = this.image.src;
+                     this.image.src = objectURL;
+                     URL.revokeObjectURL(old_url);
+                     this.maybe_fractal_request();
+                     compute_fps();
+                 });
              }
 
          }
@@ -349,9 +382,8 @@
              }
 
              run_callbacks() {
-                 var state = this.get_state();
                  for (var callback of this.callbacks) {
-                     callback(state);
+                     callback();
                  }
              }
 
@@ -439,15 +471,14 @@
              document.getElementById("fps").innerHTML = "FPS: " + events.length;
          }
 
-         function toggle_cycle() {
-             cycling = !cycling;
-             console.log(cycling);
-             if (cycling) next_image();
-         }
-
          function main() {
              const overlay = document.getElementById("overlay");
              const image = document.getElementById("fractal");
+
+             // Force the image to be the same size as the overlay.
+             image.width = overlay.width;
+             image.height = overlay.height;
+
              // A square.
              /* var initial_zeros = [
               *     {r: 1, i: 1, red: 255, green: 0, blue: 0},
@@ -473,9 +504,8 @@
                  {r: -0.5, i: 0.86602540378, red: 0, green: 255, blue: 0},
                  {r: -0.5, i: -0.86602540378, red: 0, green: 0, blue: 255},
              ];
-             const requester = new FractalRequester(image, overlay.width, overlay.height);
              const tracker = new ViewportTracker(overlay, initial_zeros);
-             tracker.add_callback((new_state) => requester.view_state_changed(new_state));
+             const requester = new FractalRequester(image, tracker);
 
              // When a randomize button is pressed, we pick random new zeros.
              for (var i = 3; i <= 10; i += 1) {
@@ -487,7 +517,7 @@
                  });
              }
 
-             // When the randomize color button is pressed, we keep the same zeros but rzndomize colors.
+             // When the randomize color button is pressed, we keep the same zeros but randomize colors.
              document.getElementById("random_colors").addEventListener("click", function() {
                  var zeros = tracker.get_zeros();
                  for (var zero of zeros) {
@@ -496,23 +526,15 @@
                  tracker.set_zeros(zeros);
              });
 
-             // When the maximum iteration count changes, sanity check and update.
-             document.getElementById("max_iters").addEventListener("input", function(event) {
-                 var value = event.target.valueAsNumber;
-                 if (isFinite(value) && value >= event.target.min && value <= event.target.max) {
-                     requester.max_iters_changed(value);
-                 }
-             });
+             // When UI options change, update.
+             document.getElementById("max_iters").addEventListener("input", () => requester.on_change());
+             document.getElementById("strategy").addEventListener("input", () => requester.on_change());
+             document.getElementById("precision").addEventListener("input", () => requester.on_change());
+             document.getElementById("png_encoder").addEventListener("input", () => requester.on_change());
+             document.getElementById("handler").addEventListener("input", () => requester.on_change());
 
              // Force an initial request.
-             tracker.run_callbacks();
-
-             // Give the requester a tick every frame.
-             const tick = function() {
-                 requester.tick();
-                 window.requestAnimationFrame(tick);
-             }
-             window.requestAnimationFrame(tick);
+             requester.on_change();
          }
 
          addEventListener("load", (event) => main());
@@ -520,10 +542,10 @@
     </head>
     <body>
         <div id="viewport">
-            <!-- <canvas id="overlay" width="2500px" height="1300px" style="z-index:2"></canvas> -->
-            <canvas id="overlay" width="2000px" height="1200px" style="z-index:2"></canvas>
-            <!-- <canvas id="overlay" width="1280px" height="720px" style="z-index:2"></canvas> -->
-            <img id="fractal" src="static/hourglass.png" style="z-index:1"/>
+            <!-- <canvas id="overlay" width="2500px" height="1300px"></canvas> -->
+            <canvas id="overlay" width="2000px" height="1200px"></canvas>
+            <!-- <canvas id="overlay" width="1280px" height="720px"></canvas> -->
+            <img id="fractal" src="static/hourglass.png"/>
         </div>
         <p>
             Maximum iterations: <input id="max_iters" type="number" min="1" max="100" step="1" value="100">
