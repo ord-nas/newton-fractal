@@ -331,6 +331,9 @@
                  // Resize context.
                  // Only set when we're in a resize drag event.
                  this.resize_context = null;
+                 // Finetune context.
+                 // Only set when a zero is being fine-tuned.
+                 this.finetune_context = null;
 
                  // Current set of zeros.
                  this.zeros = zeros;
@@ -349,6 +352,9 @@
                  resizer.addEventListener("mousedown", (event) => this.resize_mousedown(event));
                  document.addEventListener("mouseup", (event) => this.resize_mouseup(event));
                  document.addEventListener("mousemove", (event) => this.resize_mousemove(event));
+
+                 // Attach finetune event listeners.
+                 document.addEventListener("keydown", (event) => this.keydown(event));
 
                  // Callbacks when state changes.
                  this.callbacks = [];
@@ -486,8 +492,15 @@
                              }
                          },
                          {
-                             text: "Done",
-                             click: () => {dialog.dialog("close");},
+                             text: "Finetune",
+                             click: function() {
+                                 self.finetune_context = {
+                                     zero_index: zero_index,
+                                     step_size: 0.125,
+                                 };
+                                 self.update_finetune_text();
+                                 dialog.dialog("close");
+                             }
                          },
                      ],
                  });
@@ -608,8 +621,10 @@
              }
 
              set_zeros(zeros) {
+                 this.finetune_context = null;
                  this.zeros = zeros;
                  this.draw();
+                 this.update_finetune_text();
                  this.run_callbacks();
              }
 
@@ -619,6 +634,50 @@
 
              add_callback(callback) {
                  this.callbacks.push(callback);
+             }
+
+             keydown(event) {
+                 if (this.finetune_context === null) {
+                     return;
+                 }
+
+                 if (event.key == "+") {
+                     this.finetune_scale_by(2.0, event);
+                 } else if (event.key == "-") {
+                     this.finetune_scale_by(0.5, event);
+                 } else if (event.key == "ArrowRight") {
+                     this.finetune_move_zero("r", 1, event);
+                 } else if (event.key == "ArrowLeft") {
+                     this.finetune_move_zero("r", -1, event);
+                 } else if (event.key == "ArrowUp") {
+                     this.finetune_move_zero("i", 1, event);
+                 } else if (event.key == "ArrowDown") {
+                     this.finetune_move_zero("i", -1, event);
+                 }
+             }
+
+             finetune_scale_by(scale, event) {
+                 this.finetune_context.step_size *= scale;
+                 this.update_finetune_text();
+                 event.stopPropagation();
+                 event.preventDefault();
+             }
+
+             finetune_move_zero(prop, direction, event) {
+                 this.zeros[this.finetune_context.zero_index][prop] += direction * this.finetune_context.step_size;
+                 this.draw();
+                 this.run_callbacks();
+                 event.stopPropagation();
+                 event.preventDefault();
+             }
+
+             update_finetune_text() {
+                 var finetune_text = document.getElementById("finetune");
+                 if (this.finetune_context === null) {
+                     finetune_text.innerHTML = "Finetune: not selected";
+                 } else {
+                     finetune_text.innerHTML = `Finetune: zero=${this.finetune_context.zero_index}, step=${this.finetune_context.step_size}`;
+                 }
              }
          }
 
@@ -694,6 +753,9 @@
              document.getElementById("png_encoder").addEventListener("input", () => requester.on_change());
              document.getElementById("handler").addEventListener("input", () => requester.on_change());
 
+             // Don't caputre keystrokes when in text fields.
+             document.getElementById("max_iters").addEventListener("keydown", (event) => event.stopPropagation());
+
              $("#edit_zero").dialog({
                  autoOpen: false,
                  height: 175,
@@ -762,6 +824,10 @@
             </select>
             <input type="checkbox" id="async_params" checked>
             <label>Async param requests</label>
+            |
+            <span id="fps">FPS: ???</span>
+            |
+            <span id="finetune">Finetune: not selected</span>
         </p>
         <p>
             Random zeros:
@@ -773,9 +839,8 @@
             <button id="random_zeros_8">8</button>
             <button id="random_zeros_9">9</button>
             <button id="random_zeros_10">10</button>
+            <button id="random_colors">Randomize Colors</button>
         </p>
-        <p><button id="random_colors">Randomize Colors</button></p>
-        <p id="fps">FPS: ???</p>
 
         <div id="edit_zero" title="Edit Zero">
 	    <form>
