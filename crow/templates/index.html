@@ -21,10 +21,23 @@
              object-fit: none;
              z-index: 1;
          }
+         #resize_container {
+             position: relative;
+             z-index: 3;
+         }
+         #resize_target {
+             position: absolute;
+             left: 2000px;
+             top: 1200px;
+             cursor: nwse-resize;
+             width: 10px;
+             height: 10px;
+             background: grey;
+         }
          #edit_zero fieldset {
-             padding:0;
-             border:0;
-             margin-top:10px;
+             padding: 0;
+             border: 0;
+             margin-top: 10px;
          }
          .destructive {
              background: #ff6e6e;
@@ -300,9 +313,11 @@
          // Pixel coordinates are in the normal pixel sense, positive in the right and down directions.
          // Complex coordinates are in the normal math sense, positive in the right and *up* directions.
          class ViewportTracker {
-             constructor(canvas, zeros) {
+             constructor(img, canvas, resizer, zeros) {
+                 this.img = img;
                  this.canvas = canvas;
                  this.ctx = canvas.getContext("2d");
+                 this.resizer = resizer;
                  this.origin_i = 2.5 / canvas.width * canvas.height;
                  this.origin_r = -2.5;
                  this.r_range = 5.0;
@@ -310,9 +325,12 @@
                  // Only set when we're in a mouse drag event.
                  this.last_pixels = null;
                  // The index of the zero we're currently moving.
-                 // Only set when we're in  a mouse draw event.
+                 // Only set when we're in a mouse drag event.
                  // Exactly one of zero_index or last_pixels will be set at a time.
                  this.zero_index = null;
+                 // Resize context.
+                 // Only set when we're in a resize drag event.
+                 this.resize_context = null;
 
                  // Current set of zeros.
                  this.zeros = zeros;
@@ -326,6 +344,11 @@
                      event.stopPropagation();
                      event.preventDefault();
                  });
+
+                 // Attach resizer event listeners.
+                 resizer.addEventListener("mousedown", (event) => this.resize_mousedown(event));
+                 document.addEventListener("mouseup", (event) => this.resize_mouseup(event));
+                 document.addEventListener("mousemove", (event) => this.resize_mousemove(event));
 
                  // Callbacks when state changes.
                  this.callbacks = [];
@@ -481,6 +504,7 @@
              left_click(event) {
                  this.last_pixels = null;
                  this.zero_index = null;
+                 this.resize_context = null;
 
                  var pixels = this.get_pixels(event);
                  var zero_index = this.get_zero_index(pixels);
@@ -494,6 +518,7 @@
              mouseup(event) {
                  this.last_pixels = null;
                  this.zero_index = null;
+                 this.resize_context = null;
              }
 
              mousemove(event) {
@@ -529,6 +554,55 @@
                  this.origin_r = complex.r - pixels.x / this.canvas.width * this.r_range;
                  this.origin_i = complex.i + pixels.y / this.canvas.width * this.r_range;
 
+                 this.draw();
+                 this.run_callbacks();
+             }
+
+             resize_mousedown(event) {
+                 var pixels = this.get_pixels(event);
+                 this.resize_context = {
+                     pixels_to_size_x: this.canvas.width - pixels.x,
+                     pixels_to_size_y: this.canvas.height - pixels.y,
+                     prev_width: this.canvas.width,
+                     prev_height: this.canvas.height,
+                 };
+                 this.last_pixels = null;
+                 this.zero_index = null;
+             }
+
+             resize_mousemove(event) {
+                 if (this.resize_context === null) {
+                     return;
+                 }
+                 var pixels = this.get_pixels(event);
+                 var new_width = pixels.x + this.resize_context.pixels_to_size_x;
+                 var new_height = pixels.y + this.resize_context.pixels_to_size_y;
+                 this.canvas.width = new_width;
+                 this.canvas.height = new_height;
+                 this.img.width = new_width;
+                 this.img.height = new_height;
+                 this.resizer.style.left = new_width + "px";
+                 this.resizer.style.top = new_height + "px";
+             }
+
+             resize_mouseup(event) {
+                 if (this.resize_context === null) {
+                     return;
+                 }
+
+                 // Recompute viewport.
+                 var new_width = this.canvas.width;
+                 var new_height = this.canvas.height;
+                 var prev_width = this.resize_context.prev_width;
+                 var prev_height = this.resize_context.prev_height;
+                 this.origin_r = this.origin_r - ((new_width - prev_width) / prev_width) * this.r_range / 2;
+                 this.origin_i = this.origin_i + ((new_height - prev_height) / prev_width) * this.r_range / 2;
+                 this.r_range = new_width / prev_width * this.r_range;
+
+                 // Stop resize.
+                 this.resize_context = null;
+
+                 // Redraw & re-request.
                  this.draw();
                  this.run_callbacks();
              }
@@ -590,7 +664,8 @@
                  {r: -0.5, i: 0.86602540378, red: 0, green: 255, blue: 0},
                  {r: -0.5, i: -0.86602540378, red: 0, green: 0, blue: 255},
              ];
-             const tracker = new ViewportTracker(overlay, initial_zeros);
+             var resizer = document.getElementById("resize_target");
+             const tracker = new ViewportTracker(image, overlay, resizer, initial_zeros);
              const requester = new FractalRequester(image, tracker);
 
              // When a randomize button is pressed, we pick random new zeros.
@@ -656,10 +731,9 @@
     </head>
     <body>
         <div id="viewport">
-            <!-- <canvas id="overlay" width="2500px" height="1300px"></canvas> -->
             <canvas id="overlay" width="2000px" height="1200px"></canvas>
-            <!-- <canvas id="overlay" width="1280px" height="720px"></canvas> -->
             <img id="fractal" src="static/hourglass.png"/>
+            <div id="resize_container"><div id="resize_target"></div></div>
         </div>
         <p>
             Maximum iterations: <input id="max_iters" type="number" min="1" max="100" step="1" value="100">
