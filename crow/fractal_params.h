@@ -367,6 +367,22 @@ struct SaveParams {
   std::string metadata;
 };
 
+struct LoadParams {
+  static std::optional<LoadParams> Parse(const crow::query_string& url_params) {
+    LoadParams load_params;
+
+    // Required params.
+    if (!ParseNonEmptyString(url_params, "load_file", &load_params.filename)) {
+      return std::nullopt;
+    }
+
+    return load_params;
+  }
+
+  // Where to load the image.
+  std::string filename;
+};
+
 bool operator==(const png::rgb_pixel& a,
 		const png::rgb_pixel& b) {
   return (a.red == b.red && a.green == b.green && a.blue == b.blue);

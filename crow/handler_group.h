@@ -28,6 +28,14 @@ class HandlerGroup : public Handler {
     return synchronous_handler_.HandleSaveRequest(params);
   }
 
+  crow::response HandleLoadRequest(const LoadParams& params) {
+    return synchronous_handler_.HandleLoadRequest(params);
+  }
+
+  crow::response HandleListImagesRequest() {
+    return synchronous_handler_.HandleListImagesRequest();
+  }
+
  private:
   Handler& GetHandler(const FractalParams& params) {
     switch (params.handler_type.value_or(HandlerType::SYNCHRONOUS)) {

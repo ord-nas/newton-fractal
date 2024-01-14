@@ -123,6 +123,28 @@ int main() {
       return handlers.HandleSaveRequest(*save_params);
     });
 
+  // Load image metadata.
+  CROW_ROUTE(app, "/load").methods(crow::HTTPMethod::POST)
+    ([&](const crow::request& req){
+      const auto params = GetBodyParams(req);
+      // std::cout << "Got the following params in request:" << std::endl;
+      // std::cout << ParamsToString(params);
+      std::optional<LoadParams> load_params = LoadParams::Parse(params);
+      if (!load_params.has_value()) {
+	std::cout << "Malformed params :(" << std::endl;
+	crow::json::wvalue json({{"success", false},
+				 {"error_message", "Malformed params"}});
+	return crow::response(json);
+      }
+      return handlers.HandleLoadRequest(*load_params);
+    });
+
+  // List images available to load.
+  CROW_ROUTE(app, "/list_images").methods(crow::HTTPMethod::POST)
+    ([&](const crow::request& req){
+      return handlers.HandleListImagesRequest();
+    });
+
   // Test page - image cycler.
   CROW_ROUTE(app, "/image_cycler.html")([](){
     return crow::mustache::load_text("image_cycler.html");

@@ -4,6 +4,10 @@
 #include <crow.h>
 #include <fstream>
 #include <iostream>
+#include <dirent.h>
+#include <string>
+#include <vector>
+#include <optional>
 
 #include "handler.h"
 #include "fractal_params.h"
@@ -11,6 +15,9 @@
 #include "png_encoding.h"
 #include "response.h"
 #include "thread_pool.h"
+
+static constexpr char image_directory[] = "/mnt/c/Users/young/Documents/Newton Fractal Saved Images/";
+static constexpr char metadata_suffix[] = "_metadata.txt";
 
 class SynchronousHandler : public Handler {
  public:
@@ -37,7 +44,7 @@ class SynchronousHandler : public Handler {
     std::string png = GeneratePng(render_params);
 
     // Construct the file path to write to.
-    std::string path = "/mnt/c/Users/young/Documents/Newton Fractal Saved Images/" + params.filename;
+    std::string path = std::string(image_directory) + params.filename;
 
     // Construct a default-successful response.
     crow::json::wvalue json({{"success", true}});
@@ -52,6 +59,55 @@ class SynchronousHandler : public Handler {
     }
 
     return save_response;
+  }
+
+  crow::response HandleLoadRequest(const LoadParams& params) {
+    // Construct the file path to read from.
+    std::string path = std::string(image_directory) + params.filename + std::string(metadata_suffix);
+
+    // Try to open the metadata file.
+    std::ifstream infile(path);
+    if (!infile.good()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message", "Could not open file: " + path}});
+      return crow::response(json);
+    }
+
+    // Read the full contents of the file.
+    std::ostringstream ss;
+    ss << infile.rdbuf();
+    const std::string metadata = ss.str();
+
+    // Respond.
+    crow::json::wvalue json({{"success", true},
+			     {"metadata", metadata}});
+    return crow::response(json);
+  }
+
+  crow::response HandleListImagesRequest() {
+    const std::optional<std::vector<std::string>> files = GetDirectoryContents(image_directory);
+
+    // If we failed to load files, return an error message.
+    if (!files.has_value()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message",
+				"Can't list directory contents of " + std::string(image_directory)}});
+      return crow::response(json);
+    }
+
+    // Filter to just the files that have metadata.
+    std::vector<crow::json::wvalue> images_with_metadata;
+    for (const std::string file : *files) {
+      const std::optional<std::string> prefix = RemoveEnding(file, std::string(metadata_suffix));
+      if (prefix.has_value()) {
+	images_with_metadata.emplace_back(*prefix);
+      }
+    }
+
+    // Construct a response.
+    crow::json::wvalue json({{"success", true},
+			     {"images", images_with_metadata}});
+    return crow::response(json);
   }
 
  private:
@@ -130,7 +186,7 @@ class SynchronousHandler : public Handler {
 
   // Returns true on success; populates *response on error.
   bool SaveMetadata(const std::string& metadata, const std::string& base_path, crow::response* response) {
-    std::string path = base_path + "_metadata.txt";
+    std::string path = base_path + std::string(metadata_suffix);
 
     // Try to write the metadata.
     std::ofstream outfile(path);
@@ -156,6 +212,36 @@ class SynchronousHandler : public Handler {
     }
 
     return true;
+  }
+
+  std::optional<std::vector<std::string>> GetDirectoryContents(const char* directory) {
+    DIR *dir = opendir(directory);
+    if (dir == nullptr) {
+      return std::nullopt;
+    }
+
+    std::vector<std::string> files;
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != nullptr) {
+      files.push_back(ent->d_name);
+    }
+
+    closedir(dir);
+    return files;
+  }
+
+  // If `full` ends with `ending`, returns `full` with `ending` removed.
+  // Otherwise, returns nullopt.
+  static std::optional<std::string> RemoveEnding(const std::string& full, const std::string& ending) {
+    if (full.size() < ending.size()) {
+      return std::nullopt;
+    }
+
+    if (full.compare(full.size() - ending.size(), ending.size(), ending) != 0) {
+      return std::nullopt;
+    }
+
+    return full.substr(0, full.size() - ending.size());
   }
 
   // Unowned.

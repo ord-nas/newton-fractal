@@ -34,12 +34,7 @@
              height: 10px;
              background: grey;
          }
-         #edit_zero fieldset {
-             padding: 0;
-             border: 0;
-             margin-top: 10px;
-         }
-         #save_form fieldset {
+         .form fieldset {
              padding: 0;
              border: 0;
              margin-top: 10px;
@@ -193,6 +188,8 @@
                  param_array.push(["save_file", document.getElementById("save_file").value]);
                  param_array.push(["save_scale", this.get_save_scale()]);
                  param_array.push(["save_metadata", JSON.stringify(this.current_params)]);
+                 // Dump in load params.
+                 param_array.push(["load_file", document.getElementById("load_file").value]);
                  // Dump in identifiers.
                  if (!shallow_equal(this.last_request_params, this.current_params)) {
                      this.current_request_id += 1;
@@ -332,7 +329,6 @@
                          'Content-Type': 'application/x-www-form-urlencoded'
                      },
                      body: url_params,
-
                  }).then((response) => {
                      return response.json();
                  }).then((json) => {
@@ -363,6 +359,146 @@
                      ],
                  });
                  dialog.dialog("open");
+             }
+
+             load_colors(metadata) {
+                 var zeros = this.tracker.get_zeros();
+                 var N = Math.min(zeros.length,
+                                  metadata.zero_reds.length,
+                                  metadata.zero_greens.length,
+                                  metadata.zero_blues.length);
+                 for (var i = 0; i < N; i++) {
+                     zeros[i].red = metadata.zero_reds[i];
+                     zeros[i].green = metadata.zero_greens[i];
+                     zeros[i].blue = metadata.zero_blues[i];
+                 }
+                 this.tracker.set_zeros(zeros);
+             }
+
+             load_full(metadata) {
+                 // Compute zeros.
+                 var zeros = [];
+                 var N = Math.min(metadata.zero_reds.length,
+                                  metadata.zero_greens.length,
+                                  metadata.zero_blues.length,
+                                  metadata.zero_rs.length,
+                                  metadata.zero_is.length);
+                 for (var i = 0; i < N; i++) {
+                     zeros.push({
+                         r: metadata.zero_rs[i],
+                         i: metadata.zero_is[i],
+                         red: metadata.zero_reds[i],
+                         green: metadata.zero_greens[i],
+                         blue: metadata.zero_blues[i],
+                     });
+                 }
+
+                 // Set options.
+                 document.getElementById("max_iters").value = metadata.max_iters;
+                 document.getElementById("strategy").value = metadata.strategy;
+                 document.getElementById("precision").value = metadata.precision;
+                 document.getElementById("png_encoder").value = metadata.png_encoder;
+                 document.getElementById("handler").value = metadata.handler;
+
+                 // Set tracker state.
+                 this.tracker.set_state({
+                     zeros: zeros,
+                     i_min: metadata.i_min,
+                     r_min: metadata.r_min,
+                     r_range: metadata.r_range,
+                     width: metadata.width,
+                     height: metadata.height,
+                 });
+
+                 // Do an on_change.
+                 this.on_change();
+             }
+
+             load_request(load_type) {
+                 var url_params = this.generate_url_params();
+                 console.log("Load request", Object.fromEntries(url_params));
+                 fetch("load", {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/x-www-form-urlencoded'
+                     },
+                     body: url_params,
+                 }).then((response) => {
+                     return response.json();
+                 }).then((json) => {
+                     console.log("Load response", json);
+                     if (!json.success) {
+                         alert("Load response: " +  JSON.stringify(json));
+                         return;
+                     }
+                     let metadata = JSON.parse(json.metadata);
+                     if (load_type == "COLORS") {
+                         this.load_colors(metadata);
+                     } else {
+                         this.load_full(metadata);
+                     }
+                 });
+             }
+
+             load_button() {
+                 var self = this;
+                 var dialog = $("#load_form");
+                 fetch("list_images", {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/x-www-form-urlencoded'
+                     },
+                 }).then((response) => {
+                     return response.json();
+                 }).then((json) => {
+                     console.log("List images response", json);
+                     if (!json.success) {
+                         alert("List images response: " +  JSON.stringify(json));
+                         return;
+                     }
+
+                     // Populate the list of files that can be loaded.
+                     var load_options = document.getElementById("load_file");
+                     // Empty out all the existing options.
+                     for (var i = load_options.options.length - 1; i >= 0; i--) {
+                         load_options.remove(i);
+                     }
+                     // Add the new options.
+                     for (var file of json.images) {
+                         var opt = document.createElement('option');
+                         opt.value = file;
+                         opt.innerHTML = file;
+                         load_options.appendChild(opt);
+                     }
+
+                     // Pop open the dialog box.
+                     dialog.dialog({
+                         buttons: [
+                             {
+                                 text: "Cancel",
+                                 class: "destructive",
+                                 click: function() {
+                                     dialog.dialog("close");
+                                 }
+                             },
+                             {
+                                 text: "Load",
+                                 click: function() {
+                                     dialog.dialog("close");
+                                     self.load_request("FULL");
+                                 }
+                             },
+                             {
+                                 text: "Load Color Palette",
+                                 click: function() {
+                                     dialog.dialog("close");
+                                     self.load_request("COLORS");
+                                 }
+                             },
+                         ],
+                     });
+                     dialog.dialog("open");
+                 });
              }
          }
 
@@ -479,6 +615,17 @@
                          r_range: this.r_range,
                      }
                  };
+             }
+
+             set_state(state) {
+                 this.set_size(state.width, state.height);
+                 this.r_range = state.r_range;
+                 this.origin_r = state.r_min;
+                 this.origin_i = state.i_min + state.r_range / state.width * state.height;
+                 this.set_zeros(state.zeros);
+
+                 this.draw();
+                 this.run_callbacks();
              }
 
              run_callbacks() {
@@ -628,6 +775,15 @@
                  this.run_callbacks();
              }
 
+             set_size(new_width, new_height) {
+                 this.canvas.width = new_width;
+                 this.canvas.height = new_height;
+                 this.img.width = new_width;
+                 this.img.height = new_height;
+                 this.resizer.style.left = new_width + "px";
+                 this.resizer.style.top = new_height + "px";
+             }
+
              resize_mousedown(event) {
                  var pixels = this.get_pixels(event);
                  this.resize_context = {
@@ -647,12 +803,7 @@
                  var pixels = this.get_pixels(event);
                  var new_width = pixels.x + this.resize_context.pixels_to_size_x;
                  var new_height = pixels.y + this.resize_context.pixels_to_size_y;
-                 this.canvas.width = new_width;
-                 this.canvas.height = new_height;
-                 this.img.width = new_width;
-                 this.img.height = new_height;
-                 this.resizer.style.left = new_width + "px";
-                 this.resizer.style.top = new_height + "px";
+                 this.set_size(new_width, new_height);
              }
 
              resize_mouseup(event) {
@@ -812,6 +963,7 @@
 
              // When save/load is pressed, trigger the corresponding action.
              document.getElementById("save").addEventListener("click", () => requester.save_button());
+             document.getElementById("load").addEventListener("click", () => requester.load_button());
 
              // Don't caputre keystrokes when in text fields.
              document.getElementById("max_iters").addEventListener("keydown", (event) => event.stopPropagation());
@@ -824,6 +976,12 @@
              });
 
              $("#save_form").dialog({
+                 autoOpen: false,
+                 width: 550,
+                 modal: true,
+             });
+
+             $("#load_form").dialog({
                  autoOpen: false,
                  width: 550,
                  modal: true,
@@ -896,6 +1054,7 @@
             <span id="finetune">Finetune: not selected</span>
             |
             <button id="save">Save</button>
+            <button id="load">Load</button>
         </p>
         <p>
             Random zeros:
@@ -910,7 +1069,7 @@
             <button id="random_colors">Randomize Colors</button>
         </p>
 
-        <div id="edit_zero" title="Edit Zero">
+        <div id="edit_zero" title="Edit Zero" class="form">
 	    <form>
 		<fieldset>
                     <input type="color" id="zero_colour" value="#ff0000" style="width:200px;">
@@ -918,12 +1077,20 @@
 	    </form>
 	</div>
 
-        <div id="save_form" title="Save">
+        <div id="save_form" title="Save" class="form">
 	    <form>
 		<fieldset>
                     Name: <input type="text" id="save_file" size="50">
                     <br/>
                     Scale: <input type="number" id="save_scale" min="1" max="10" value="1">
+		</fieldset>
+	    </form>
+	</div>
+
+        <div id="load_form" title="Load" class="form">
+	    <form>
+		<fieldset>
+                    <select id="load_file"></select>
 		</fieldset>
 	    </form>
 	</div>
