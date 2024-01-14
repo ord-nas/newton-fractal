@@ -39,6 +39,11 @@
              border: 0;
              margin-top: 10px;
          }
+         #save_form fieldset {
+             padding: 0;
+             border: 0;
+             margin-top: 10px;
+         }
          .destructive {
              background: #ff6e6e;
          }
@@ -93,6 +98,15 @@
              return Array(length).fill().map(random_char).join("");
          }
 
+         function get_bounded_value(element) {
+             var value = element.valueAsNumber;
+             if (!isFinite(value)) {
+                 return element.max;
+             } else {
+                 return Math.min(element.max, Math.max(element.min, value));
+             }
+         }
+
          class FractalRequester {
              constructor(image, tracker) {
                  this.image = image;
@@ -127,13 +141,11 @@
              }
 
              get_max_iters() {
-                 var element = document.getElementById("max_iters");
-                 var value = element.valueAsNumber;
-                 if (!isFinite(value)) {
-                     return element.max;
-                 } else {
-                     return Math.min(element.max, Math.max(element.min, value));
-                 }
+                 return get_bounded_value(document.getElementById("max_iters"));
+             }
+
+             get_save_scale() {
+                 return get_bounded_value(document.getElementById("save_scale"));
              }
 
              get_current_params() {
@@ -177,6 +189,10 @@
                          param_array.push([key, value]);
                      }
                  }
+                 // Dump in save params.
+                 param_array.push(["save_file", document.getElementById("save_file").value]);
+                 param_array.push(["save_scale", this.get_save_scale()]);
+                 param_array.push(["save_metadata", JSON.stringify(this.current_params)]);
                  // Dump in identifiers.
                  if (!shallow_equal(this.last_request_params, this.current_params)) {
                      this.current_request_id += 1;
@@ -307,6 +323,47 @@
                  });
              }
 
+             save_request() {
+                 var url_params = this.generate_url_params();
+                 console.log("Save request", Object.fromEntries(url_params));
+                 fetch("save", {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/x-www-form-urlencoded'
+                     },
+                     body: url_params,
+
+                 }).then((response) => {
+                     return response.json();
+                 }).then((json) => {
+                     console.log("Save response", json);
+                     alert("Save response: " +  JSON.stringify(json));
+                 });
+             }
+
+             save_button() {
+                 var self = this;
+                 var dialog = $("#save_form");
+                 dialog.dialog({
+                     buttons: [
+                         {
+                             text: "Cancel",
+                             class: "destructive",
+                             click: function() {
+                                 dialog.dialog("close");
+                             }
+                         },
+                         {
+                             text: "Save",
+                             click: function() {
+                                 dialog.dialog("close");
+                                 self.save_request();
+                             }
+                         },
+                     ],
+                 });
+                 dialog.dialog("open");
+             }
          }
 
          // Origin for both coordinate systems is top left.
@@ -753,6 +810,9 @@
              document.getElementById("png_encoder").addEventListener("input", () => requester.on_change());
              document.getElementById("handler").addEventListener("input", () => requester.on_change());
 
+             // When save/load is pressed, trigger the corresponding action.
+             document.getElementById("save").addEventListener("click", () => requester.save_button());
+
              // Don't caputre keystrokes when in text fields.
              document.getElementById("max_iters").addEventListener("keydown", (event) => event.stopPropagation());
 
@@ -761,6 +821,12 @@
                  height: 175,
                  width: 250,
                  modal: false,
+             });
+
+             $("#save_form").dialog({
+                 autoOpen: false,
+                 width: 550,
+                 modal: true,
              });
 
              $(".ui-dialog").on("contextmenu", function(event) {
@@ -828,6 +894,8 @@
             <span id="fps">FPS: ???</span>
             |
             <span id="finetune">Finetune: not selected</span>
+            |
+            <button id="save">Save</button>
         </p>
         <p>
             Random zeros:
@@ -846,6 +914,16 @@
 	    <form>
 		<fieldset>
                     <input type="color" id="zero_colour" value="#ff0000" style="width:200px;">
+		</fieldset>
+	    </form>
+	</div>
+
+        <div id="save_form" title="Save">
+	    <form>
+		<fieldset>
+                    Name: <input type="text" id="save_file" size="50">
+                    <br/>
+                    Scale: <input type="number" id="save_scale" min="1" max="10" value="1">
 		</fieldset>
 	    </form>
 	</div>

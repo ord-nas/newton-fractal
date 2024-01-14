@@ -107,6 +107,22 @@ int main() {
       return handlers.HandleFractalRequest(*fractal_params);
     });
 
+  // Save image with metadata.
+  CROW_ROUTE(app, "/save").methods(crow::HTTPMethod::POST)
+    ([&](const crow::request& req){
+      const auto params = GetBodyParams(req);
+      // std::cout << "Got the following params in request:" << std::endl;
+      // std::cout << ParamsToString(params);
+      std::optional<SaveParams> save_params = SaveParams::Parse(params);
+      if (!save_params.has_value()) {
+	std::cout << "Malformed params :(" << std::endl;
+	crow::json::wvalue json({{"success", false},
+				 {"error_message", "Malformed params"}});
+	return crow::response(json);
+      }
+      return handlers.HandleSaveRequest(*save_params);
+    });
+
   // Test page - image cycler.
   CROW_ROUTE(app, "/image_cycler.html")([](){
     return crow::mustache::load_text("image_cycler.html");

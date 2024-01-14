@@ -334,6 +334,39 @@ struct FractalParams {
   std::optional<HandlerType> handler_type;
 };
 
+struct SaveParams {
+  static std::optional<SaveParams> Parse(const crow::query_string& url_params) {
+    SaveParams save_params;
+
+    std::optional<FractalParams> fractal_params = FractalParams::Parse(url_params);
+    if (!fractal_params.has_value()) {
+      return std::nullopt;
+    }
+    save_params.fractal_params = *fractal_params;
+
+    // Required params.
+    if (!ParsePositiveInt(url_params, "save_scale", &save_params.scale) ||
+	!ParseNonEmptyString(url_params, "save_file", &save_params.filename) ||
+	!ParseNonEmptyString(url_params, "save_metadata", &save_params.metadata)) {
+      return std::nullopt;
+    }
+
+    return save_params;
+  }
+
+  // Fractal generation params.
+  FractalParams fractal_params;
+
+  // Integer scale factor.
+  size_t scale = 1;
+
+  // Where to save the image.
+  std::string filename;
+
+  // Metadata about the image.
+  std::string metadata;
+};
+
 bool operator==(const png::rgb_pixel& a,
 		const png::rgb_pixel& b) {
   return (a.red == b.red && a.green == b.green && a.blue == b.blue);

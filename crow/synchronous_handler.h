@@ -2,6 +2,8 @@
 #define _CROW_FRACTAL_SERVER_SYNCHRONOUS_HANDLER_
 
 #include <crow.h>
+#include <fstream>
+#include <iostream>
 
 #include "handler.h"
 #include "fractal_params.h"
@@ -20,11 +22,36 @@ class SynchronousHandler : public Handler {
     return crow::response(json);
   }
 
-  crow::response HandleFractalRequest(const FractalParams& params) {
+  crow::response HandleFractalRequest(const FractalParams& params) override {
     std::string png = GeneratePng(params);
     return ImageWithMetadata(std::move(png),
 			     {{"data_id", params.request_id},
 			      {"viewport_id", params.request_id}});
+  }
+
+  crow::response HandleSaveRequest(const SaveParams& params) {
+    // Render the fractal, potentially at increased scale.
+    FractalParams render_params = params.fractal_params;
+    render_params.width *= params.scale;
+    render_params.height *= params.scale;
+    std::string png = GeneratePng(render_params);
+
+    // Construct the file path to write to.
+    std::string path = "/mnt/c/Users/young/Documents/Newton Fractal Saved Images/" + params.filename;
+
+    // Construct a default-successful response.
+    crow::json::wvalue json({{"success", true}});
+    crow::response save_response(json);
+
+    // Try to write the PNG and metadata.
+    if (!SavePng(png, path, &save_response)) {
+      return save_response;
+    }
+    if (!SaveMetadata(params.metadata, path, &save_response)) {
+      return save_response;
+    }
+
+    return save_response;
   }
 
  private:
@@ -59,6 +86,76 @@ class SynchronousHandler : public Handler {
 
     std::cout << Now() << ": Done generating PNG" << std::endl;
     return png;
+  }
+
+  // Returns true on success; populates *response on error.
+  bool SavePng(const std::string& png, const std::string& base_path, crow::response* response) {
+    std::string path = base_path + ".png";
+
+    // Check that the file doesn't already exist.
+    std::ifstream infile(path, std::ios_base::binary);
+    if (infile.good()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message", "File already exists: " + path}});
+      *response = crow::response(json);
+      return false;
+    }
+    infile.close();
+
+    // Try to write the PNG.
+    std::ofstream outfile(path, std::ios_base::binary);
+    if (!outfile.good()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message", "Could not open file: " + path}});
+      *response = crow::response(json);
+      return false;
+    }
+    outfile.write(png.c_str(), png.size());
+    if (!outfile.good()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message", "Write failed"}});
+      *response = crow::response(json);
+      return false;
+    }
+    outfile.close();
+    if (!outfile.good()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message", "Close failed"}});
+      *response = crow::response(json);
+      return false;
+    }
+
+    return true;
+  }
+
+  // Returns true on success; populates *response on error.
+  bool SaveMetadata(const std::string& metadata, const std::string& base_path, crow::response* response) {
+    std::string path = base_path + "_metadata.txt";
+
+    // Try to write the metadata.
+    std::ofstream outfile(path);
+    if (!outfile.good()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message", "Could not open metadata file: " + path}});
+      *response = crow::response(json);
+      return false;
+    }
+    outfile << metadata;
+    if (!outfile.good()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message", "Metadata write failed"}});
+      *response = crow::response(json);
+      return false;
+    }
+    outfile.close();
+    if (!outfile.good()) {
+      crow::json::wvalue json({{"success", false},
+			       {"error_message", "Metadata close failed"}});
+      *response = crow::response(json);
+      return false;
+    }
+
+    return true;
   }
 
   // Unowned.
