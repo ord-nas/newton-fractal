@@ -807,7 +807,7 @@
                  event.stopPropagation();
                  event.preventDefault();
 
-                 var scale_per_pixel = 0.003;
+                 var scale_per_pixel = event.ctrlKey ? 0.0005 : 0.003;
                  var scale_amount = Math.pow(1 + scale_per_pixel, event.deltaY);
                  var pixels = this.get_pixels(event);
                  var complex = this.get_complex(event);
@@ -1161,7 +1161,7 @@
             <button id="random_colors">Randomize Colors</button>
         </p>
         <p>
-            Left-click-and-drag to pan or to move zeros. Right click to add/edit zeros. Mouse wheel to zoom. Ctrl+left-click-and-drag to rotate around center. Arrow keys and +/- to finetune zero position.
+            Left-click-and-drag to pan or to move zeros. Right click to add/edit zeros. Mouse wheel to zoom (hold Ctrl for more precision). Ctrl+left-click-and-drag to rotate around center. Arrow keys and +/- to finetune zero position.
         </p>
 
         <div id="edit_zero" title="Edit Zero" class="form">
