@@ -583,6 +583,16 @@
                      this.ctx.arc(center.x, center.y, 8, 0, 2 * Math.PI);
                      this.ctx.fill();
                  }
+
+                 // Hack
+                 this.ctx.beginPath();
+                 this.ctx.moveTo(this.canvas.width/3, 0);
+                 this.ctx.lineTo(this.canvas.width/3, this.canvas.height);
+                 this.ctx.stroke();
+                 this.ctx.beginPath();
+                 this.ctx.moveTo(this.canvas.width*2/3, 0);
+                 this.ctx.lineTo(this.canvas.width*2/3, this.canvas.height);
+                 this.ctx.stroke();
              }
 
              get_pixels(event) {
