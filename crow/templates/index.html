@@ -935,6 +935,42 @@
                      finetune_text.innerHTML = `Finetune: zero=${this.finetune_context.zero_index}, step=${this.finetune_context.step_size}`;
                  }
              }
+
+             set_size_button() {
+                 var self = this;
+                 var dialog = $("#set_size_form");
+                 dialog.dialog({
+                     buttons: [
+                         {
+                             text: "Cancel",
+                             class: "destructive",
+                             click: function() {
+                                 dialog.dialog("close");
+                             }
+                         },
+                         {
+                             text: "Set Size",
+                             click: function() {
+                                 dialog.dialog("close");
+                                 var new_width = document.getElementById("set_size_width").value;
+                                 var new_height = document.getElementById("set_size_height").value;
+
+                                 // Recompute viewport.
+                                 var prev_width = self.canvas.width;
+                                 var prev_height = self.canvas.height;
+                                 self.origin_r = self.origin_r - ((new_width - prev_width) / prev_width) * self.r_range / 2;
+                                 self.origin_i = self.origin_i + ((new_height - prev_height) / prev_width) * self.r_range / 2;
+                                 self.r_range = new_width / prev_width * self.r_range;
+
+                                 self.set_size(new_width, new_height);
+                                 self.draw();
+                                 self.run_callbacks();
+                             }
+                         },
+                     ],
+                 });
+                 dialog.dialog("open");
+             }
          }
 
          function compute_fps() {
@@ -1009,9 +1045,10 @@
              document.getElementById("png_encoder").addEventListener("input", () => requester.on_change());
              document.getElementById("handler").addEventListener("input", () => requester.on_change());
 
-             // When save/load is pressed, trigger the corresponding action.
+             // When save/load/set_size is pressed, trigger the corresponding action.
              document.getElementById("save").addEventListener("click", () => requester.save_button());
              document.getElementById("load").addEventListener("click", () => requester.load_button());
+             document.getElementById("set_size").addEventListener("click", () => tracker.set_size_button());
 
              // Don't caputre keystrokes when in text fields.
              document.getElementById("max_iters").addEventListener("keydown", (event) => event.stopPropagation());
@@ -1032,6 +1069,12 @@
              $("#load_form").dialog({
                  autoOpen: false,
                  width: 550,
+                 modal: true,
+             });
+
+             $("#set_size_form").dialog({
+                 autoOpen: false,
+                 width: 250,
                  modal: true,
              });
 
@@ -1103,6 +1146,7 @@
             |
             <button id="save">Save</button>
             <button id="load">Load</button>
+            <button id="set_size">Set Canvas Size</button>
         </p>
         <p>
             Random zeros:
@@ -1142,6 +1186,16 @@
 	    <form>
 		<fieldset>
                     <select id="load_file"></select>
+		</fieldset>
+	    </form>
+	</div>
+
+        <div id="set_size_form" title="Set Size" class="form">
+	    <form>
+		<fieldset>
+                    Width: <input type="number" id="set_size_width" min="1">
+                    <br/>
+                    Height: <input type="number" id="set_size_height" min="1">
 		</fieldset>
 	    </form>
 	</div>
